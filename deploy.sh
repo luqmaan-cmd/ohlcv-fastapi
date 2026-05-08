@@ -14,7 +14,7 @@ gcloud run deploy $SERVICE_NAME \
   --platform managed \
   --region $REGION \
   --vpc-connector $VPC_CONNECTOR \
-  --set-env-vars DB_HOST=10.154.15.212,DB_USER=postgres,DB_PASSWORD=hSg8vrqSb9SYT1Eg,DB_NAME=asset_identification_scheme,API_KEY=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25 \
+  --set-secrets="DB_HOST=db-host:latest,DB_USER=db-user:latest,DB_PASSWORD=db-password:latest,DB_NAME=db-name:latest,DB_PORT=db-port:latest,API_KEY=api-key:latest" \
   --allow-unauthenticated \
   --port 8080 \
   --min-instances 0 \
