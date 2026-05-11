@@ -185,3 +185,21 @@ class TickerAliasResponse(TickerAliasBase):
 class TickerAliasListResponse(BaseModel):
     data: List[TickerAliasResponse]
     total: int
+
+
+# SQL Query Schemas
+
+class SqlQueryRequest(BaseModel):
+    """Request body for the read-only SQL query endpoint."""
+    query: str = Field(..., min_length=1, description="SQL SELECT query to execute")
+
+
+class SqlQueryResponse(BaseModel):
+    """Response for the read-only SQL query endpoint."""
+    columns: List[str] = Field(..., description="Column names in the result set")
+    rows: List[dict] = Field(..., description="Result rows as list of dicts")
+    row_count: int = Field(..., description="Number of rows returned")
+    truncated: bool = Field(
+        default=False,
+        description="True if the result was truncated due to the row limit"
+    )

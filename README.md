@@ -6,6 +6,7 @@ High-performance REST API for OHLCV (Open, High, Low, Close, Volume) financial d
 
 - **Batch queries** — Request data for multiple companies in one API call using `tickers=AAPL,MSFT,GOOGL`
 - **S&P 500 enriched data** — OHLCV records enriched with company name, sector, industry, and index weight
+- **SQL query endpoint** — Execute read-only SQL queries directly against the database with built-in guardrails (read-only, timeout, row limit, allowed tables)
 - **Automatic alias resolution** — Mismatched tickers (e.g. `FISV` → `FI`) resolved transparently via the `ticker_aliases` table
 - **Constituent verification** — S&P 500 endpoints reject invalid tickers with clear error messages
 - **LATERAL join performance** — Latest-price queries use `CROSS JOIN LATERAL` for ~50ms response times across 12,500+ tickers
@@ -71,6 +72,7 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/?tickers=AAPL,MS
 | `GET /sp500/latest/` | `tickers=AAPL,MSFT,GOOGL` | Latest S&P 500 OHLCV | Yes |
 | `GET /sp500/latest/` | *(omit tickers)* | Latest for all 503 constituents | Yes |
 | `GET /sp500/history/` | `tickers=AAPL,MSFT,GOOGL` | Paginated S&P 500 history | Yes |
+| `GET /sp500/history/` | *(omit tickers)* | Paginated history for all active constituents | Yes |
 
 ## S&P 500 Endpoints
 
@@ -181,6 +183,35 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/aliases/?api_key=YOUR_
 }
 ```
 
+## SQL Query Endpoint
+
+Execute read-only SQL SELECT queries directly against the database. Four guardrails protect data integrity:
+
+1. **Read-only** — Only `SELECT` / `WITH` (CTE) statements permitted
+2. **Timeout** — Queries cancelled after 30s (configurable via `SQL_TIMEOUT_S`)
+3. **Row limit** — Max 5,000 rows returned (configurable via `SQL_MAX_ROWS`)
+4. **Allowed tables** — Only `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`
+
+```bash
+curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "SELECT ticker, date, close, volume FROM ohlcv_data WHERE ticker = '\''AAPL'\'' ORDER BY date DESC LIMIT 5"}'
+```
+
+```json
+{
+  "columns": ["ticker", "date", "close", "volume"],
+  "rows": [
+    {"ticker": "AAPL", "date": "2026-05-07", "close": "287.4400", "volume": 40410371},
+    {"ticker": "AAPL", "date": "2026-05-06", "close": "287.5100", "volume": 58336100}
+  ],
+  "row_count": 2,
+  "truncated": false
+}
+```
+
+See [DEVELOPER.md](./DEVELOPER.md) for full documentation including CTE examples, error responses, and configuration options.
+
 ## All Endpoints
 
 ### OHLCV Data
@@ -205,7 +236,6 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/aliases/?api_key=YOUR_
 | GET | `/sp500/` | List S&P 500 constituents (paginated, filterable by sector) |
 | GET | `/sp500/latest/` | Latest OHLCV for S&P 500 constituents (supports batch `tickers`) |
 | GET | `/sp500/history/` | Historical OHLCV for multiple S&P 500 constituents (batch) |
-| GET | `/sp500/{ticker}/history/` | OHLCV history for a single S&P 500 constituent |
 
 ### Ticker Aliases
 
@@ -216,6 +246,12 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/aliases/?api_key=YOUR_
 | POST | `/aliases/` | Create ticker alias |
 | PUT | `/aliases/{sp500_ticker}` | Update ticker alias |
 | DELETE | `/aliases/{sp500_ticker}` | Delete ticker alias |
+
+### SQL Query
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/sql/` | Execute read-only SQL SELECT query (with guardrails) |
 
 ## Deploy to GCP Cloud Run
 

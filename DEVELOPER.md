@@ -51,7 +51,15 @@ Returns the most recent OHLCV record for the specified S&P 500 constituents, sor
 
 **Endpoint:** `GET /sp500/latest/`
 
-> **Note:** This endpoint must be called with the trailing slash. Without it, FastAPI will route the request to `GET /sp500/{ticker}/history/`.
+> **URL Pattern — Batch vs All Constituents:**
+>
+> ✅ **Batch (specific tickers):** `GET /sp500/latest/?tickers=AAPL,MSFT,GOOGL`
+>
+> ✅ **All constituents:** `GET /sp500/latest/`
+>
+> ❌ **Wrong:** `GET /sp500/latest/AAPL` — no single-ticker path param on this endpoint
+>
+> ❌ **Wrong:** `GET /sp500/latest?ticker=AAPL` — parameter is `tickers` (plural), not `ticker`
 
 #### Query Parameters
 
@@ -135,16 +143,28 @@ Returns all 503 constituents with latest OHLCV data, sorted by index weight desc
 
 ### Get Batch Historical OHLCV for S&P 500 Constituents
 
-Returns paginated historical OHLCV data for multiple S&P 500 constituents in a single request. Verifies all requested tickers are active S&P 500 members and resolves ticker aliases automatically. Results are enriched with name, sector, industry, and weight.
+Returns paginated historical OHLCV data for S&P 500 constituents in a single request. Verifies all requested tickers are active S&P 500 members and resolves ticker aliases automatically. Results are enriched with name, sector, industry, and weight.
+
+If `tickers` is omitted, returns history for all active S&P 500 constituents.
 
 **Endpoint:** `GET /sp500/history/`
+
+> **URL Pattern — Batch vs All Constituents:**
+>
+> ✅ **Batch (specific tickers):** `GET /sp500/history/?tickers=AAPL,MSFT,GOOGL&start_date=2026-01-01`
+>
+> ✅ **All constituents:** `GET /sp500/history/?start_date=2026-01-01`
+>
+> ❌ **Wrong:** `GET /sp500/history/AAPL` — no single-ticker path param on this endpoint
+>
+> ❌ **Wrong:** `GET /sp500/history?ticker=AAPL` — parameter is `tickers` (plural), not `ticker`
 
 #### Query Parameters
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `api_key` | string | **Required** | API key for authentication |
-| `tickers` | string | **Required** | Comma-separated S&P 500 tickers (e.g., `AAPL,MSFT,GOOGL`) |
+| `tickers` | string | - | Comma-separated S&P 500 tickers (e.g., `AAPL,MSFT,GOOGL`). If omitted, returns history for all active constituents. |
 | `start_date` | date | - | Start date filter (YYYY-MM-DD) |
 | `end_date` | date | - | End date filter (YYYY-MM-DD) |
 | `year` | integer | - | Filter by year (1900-2100) |
@@ -152,7 +172,7 @@ Returns paginated historical OHLCV data for multiple S&P 500 constituents in a s
 | `sort_by` | string | `date` | Sort field: `date`, `volume`, `close`, `open`, `high`, `low` |
 | `sort_order` | string | `desc` | Sort order: `asc`, `desc` |
 | `page` | integer | `1` | Page number (min: 1) |
-| `per_page` | integer | `100` | Records per page (min: 1, max: 1000) |
+| `per_page` | integer | `1000` | Records per page (min: 1, max: 5000) |
 
 #### Example Request — Batch History for Multiple Companies
 
@@ -228,6 +248,14 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/history/?
 }
 ```
 
+#### Example Request — All S&P 500 Constituents
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/history/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25&start_date=2026-05-01&end_date=2026-05-07&sort_by=date&sort_order=desc&page=1&per_page=10"
+```
+
+Returns paginated historical OHLCV data for all active S&P 500 constituents within the specified date range. Ticker alias resolution is applied automatically.
+
 ---
 
 ### List S&P 500 Constituents
@@ -244,7 +272,7 @@ Returns paginated list of S&P 500 constituents enriched with metadata from the `
 | `sector` | string | - | Filter by GIC sector (e.g., `Technology`, `Healthcare`, `Communication Services`) |
 | `is_active` | boolean | - | Filter by active status (`true`/`false`) |
 | `page` | integer | `1` | Page number (min: 1) |
-| `per_page` | integer | `100` | Records per page (min: 1, max: 1000) |
+| `per_page` | integer | `1000` | Records per page (min: 1, max: 5000) |
 
 #### Example Request — All Constituents
 
@@ -311,105 +339,6 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/?api_key=
 
 ---
 
-### Get OHLCV History for Single S&P 500 Constituent
-
-Returns paginated OHLCV history for a single S&P 500 constituent. Verifies the ticker is an active S&P 500 constituent before returning data (returns 404 if not).
-
-**Endpoint:** `GET /sp500/{ticker}/history/`
-
-#### Path Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `ticker` | string | S&P 500 ticker symbol (e.g., `AAPL`) |
-
-#### Query Parameters
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `api_key` | string | **Required** | API key for authentication |
-| `start_date` | date | - | Start date filter (YYYY-MM-DD) |
-| `end_date` | date | - | End date filter (YYYY-MM-DD) |
-| `year` | integer | - | Filter by year (1900-2100) |
-| `month` | integer | - | Filter by month (1-12) |
-| `sort_by` | string | `date` | Sort field: `date`, `volume`, `close`, `open`, `high`, `low` |
-| `sort_order` | string | `desc` | Sort order: `asc`, `desc` |
-| `page` | integer | `1` | Page number (min: 1) |
-| `per_page` | integer | `100` | Records per page (min: 1, max: 1000) |
-
-#### Example Request
-
-```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/AAPL/history/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25&start_date=2026-05-01&end_date=2026-05-07&sort_by=date&sort_order=desc&page=1&per_page=3"
-```
-
-#### Example Response
-
-```json
-{
-  "data": [
-    {
-      "ticker": "AAPL",
-      "date": "2026-05-07",
-      "open": "289.2700",
-      "high": "292.1300",
-      "low": "285.7800",
-      "close": "287.4400",
-      "adjusted_close": "287.4400",
-      "volume": 40410371,
-      "asset_isin": "US0378331005",
-      "id": "b7ed13ca-94fb-4ac3-a952-bb46febe0a4b",
-      "created_at": "2026-05-08T02:02:41.827964",
-      "updated_at": "2026-05-08T02:02:41.827964"
-    },
-    {
-      "ticker": "AAPL",
-      "date": "2026-05-06",
-      "open": "281.9200",
-      "high": "288.0300",
-      "low": "281.0700",
-      "close": "287.5100",
-      "adjusted_close": "287.5100",
-      "volume": 58336100,
-      "asset_isin": "US0378331005",
-      "id": "34b7f530-2d8c-467b-8d2c-bb24a83f1c4d",
-      "created_at": "2026-05-07T02:06:10.132570",
-      "updated_at": "2026-05-08T02:02:41.827964"
-    },
-    {
-      "ticker": "AAPL",
-      "date": "2026-05-05",
-      "open": "276.9300",
-      "high": "284.5700",
-      "low": "276.5000",
-      "close": "284.1800",
-      "adjusted_close": "284.1800",
-      "volume": 49311700,
-      "asset_isin": "US0378331005",
-      "id": "4b100624-59f3-4ea3-a92a-4bc5db173cf4",
-      "created_at": "2026-05-06T02:06:06.517324",
-      "updated_at": "2026-05-08T02:02:41.827964"
-    }
-  ],
-  "total": 5,
-  "page": 1,
-  "per_page": 3,
-  "total_pages": 2,
-  "has_next": true,
-  "has_prev": false
-}
-```
-
-#### Error Response — Invalid Ticker
-
-```json
-{
-  "detail": "Ticker 'XYZ' is not an active S&P 500 constituent"
-}
-```
-
----
-
 ## OHLCV Batch Queries
 
 The plain OHLCV endpoints support batch queries for any ticker in the database (not just S&P 500). Use these when you need data for non-S&P 500 stocks or don't need the enriched metadata.
@@ -421,6 +350,18 @@ Returns the most recent OHLCV record for one or more tickers in a single request
 **Endpoint:** `GET /ohlcv/latest/`
 
 > **Note:** This endpoint must be called with the trailing slash. Without it, FastAPI will route the request to `GET /ohlcv/latest/{ticker}` and treat the query string as a path parameter.
+
+> **URL Pattern — Batch vs Single Ticker:**
+>
+> ✅ **Batch (multiple tickers):** `GET /ohlcv/latest/?tickers=AAPL,MSFT,GOOGL`
+>
+> ✅ **All tickers:** `GET /ohlcv/latest/`
+>
+> ✅ **Single ticker (path param):** `GET /ohlcv/latest/AAPL`
+>
+> ❌ **Wrong:** `GET /ohlcv/latest/AAPL,MSFT` — commas not allowed in path params
+>
+> ❌ **Wrong:** `GET /ohlcv/latest?ticker=AAPL` — no `ticker` query param on this endpoint
 
 #### Query Parameters
 
@@ -525,7 +466,7 @@ Returns paginated OHLCV records with filtering and sorting options. Supports bat
 | `sort_by` | string | `date` | Sort field: `date`, `volume`, `close`, `open`, `high`, `low` |
 | `sort_order` | string | `desc` | Sort order: `asc`, `desc` |
 | `page` | integer | `1` | Page number (min: 1) |
-| `per_page` | integer | `100` | Records per page (min: 1, max: 1000) |
+| `per_page` | integer | `1000` | Records per page (min: 1, max: 5000) |
 
 #### Example Request — Single Ticker
 
@@ -1091,6 +1032,131 @@ HTTP 204 No Content
 
 ---
 
+## SQL Query Endpoint
+
+Execute read-only SQL SELECT queries directly against the database. This endpoint is designed for ad-hoc data exploration and analysis that isn't covered by the existing REST endpoints.
+
+**Endpoint:** `POST /sql/`
+
+### Guardrails
+
+The SQL endpoint enforces four guardrails to protect data integrity and performance:
+
+| # | Guardrail | Description |
+|---|-----------|-------------|
+| 1 | **Read-only** | Only `SELECT` and `WITH` (CTE) statements are permitted. DML (`INSERT`, `UPDATE`, `DELETE`) and DDL (`CREATE`, `DROP`, `ALTER`) are blocked. |
+| 2 | **Timeout** | Queries are cancelled after 30 seconds (configurable via `SQL_TIMEOUT_S` env var). Returns `408 Request Timeout` if exceeded. |
+| 3 | **Row limit** | At most 5,000 rows are returned (configurable via `SQL_MAX_ROWS` env var). If the query produces more rows, the response is truncated and `truncated` is set to `true`. |
+| 4 | **Allowed tables** | Only the following tables may be referenced: `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`. |
+
+### Allowed Tables
+
+| Table | Description | Key Columns |
+|-------|-------------|-------------|
+| `ohlcv_data` | OHLCV price data (43M+ rows) | `ticker`, `date`, `open`, `high`, `low`, `close`, `adjusted_close`, `volume`, `asset_isin` |
+| `assets` | Asset metadata | `isin`, `code`, `name`, `gicSector`, `description`, `countryName` |
+| `sp500_constituents` | S&P 500 index constituents | `code`, `name`, `sector`, `industry`, `weight`, `is_active` |
+| `ticker_aliases` | Ticker symbol mappings | `sp500_ticker`, `ohlcv_ticker` |
+| `tickers` | Unique ticker lookup table | `ticker` |
+
+### Request Body
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `query` | string | Yes | SQL SELECT query to execute |
+
+### Example Request — Simple Query
+
+```bash
+curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "SELECT ticker, date, close, volume FROM ohlcv_data WHERE ticker = '\''AAPL'\'' ORDER BY date DESC LIMIT 5"}'
+```
+
+### Example Response
+
+```json
+{
+  "columns": ["ticker", "date", "close", "volume"],
+  "rows": [
+    {"ticker": "AAPL", "date": "2026-05-07", "close": "287.4400", "volume": 40410371},
+    {"ticker": "AAPL", "date": "2026-05-06", "close": "287.5100", "volume": 58336100},
+    {"ticker": "AAPL", "date": "2026-05-05", "close": "281.9200", "volume": 48263100},
+    {"ticker": "AAPL", "date": "2026-05-02", "close": "280.8800", "volume": 42187400},
+    {"ticker": "AAPL", "date": "2026-05-01", "close": "276.4100", "volume": 36452700}
+  ],
+  "row_count": 5,
+  "truncated": false
+}
+```
+
+### Example Request — CTE with JOIN
+
+```bash
+curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "WITH latest AS (SELECT ticker, MAX(date) AS latest_date FROM ohlcv_data WHERE ticker IN ('\''AAPL'\'', '\''MSFT'\'') GROUP BY ticker) SELECT l.ticker, l.latest_date, o.close, o.volume FROM latest l JOIN ohlcv_data o ON o.ticker = l.ticker AND o.date = l.latest_date ORDER BY l.ticker"}'
+```
+
+### Example Request — S&P 500 with Asset Metadata
+
+```bash
+curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "SELECT s.code, s.name, s.sector, s.weight, a.isin, a.description FROM sp500_constituents s LEFT JOIN assets a ON s.code = a.code WHERE s.is_active = true ORDER BY s.weight DESC LIMIT 10"}'
+```
+
+### Error Responses
+
+#### 400 — Forbidden Statement
+
+```json
+{
+  "detail": "Only SELECT queries are allowed. Statement starts with 'DELETE'."
+}
+```
+
+#### 400 — Forbidden Keyword
+
+```json
+{
+  "detail": "Forbidden keyword(s) in query: INSERT. Only read-only SELECT queries are allowed."
+}
+```
+
+#### 400 — Disallowed Table
+
+```json
+{
+  "detail": "Table(s) not allowed: pg_class. Allowed tables: assets, ohlcv_data, sp500_constituents, ticker_aliases, tickers."
+}
+```
+
+#### 408 — Query Timeout
+
+```json
+{
+  "detail": "Query timed out after 30s. Simplify your query or add more filters."
+}
+```
+
+#### 400 — Execution Error
+
+```json
+{
+  "detail": "Query execution error: column \"nonexistent\" does not exist"
+}
+```
+
+### Configuration
+
+| Environment Variable | Default | Description |
+|---------------------|---------|-------------|
+| `SQL_MAX_ROWS` | `5000` | Maximum number of rows returned per query |
+| `SQL_TIMEOUT_S` | `30` | Query timeout in seconds |
+
+---
+
 ## Batch Query Patterns
 
 ### When to Use S&P 500 vs Plain OHLCV
@@ -1098,10 +1164,9 @@ HTTP 204 No Content
 | Use Case | Endpoint | Why |
 |----------|----------|-----|
 | Latest prices for S&P 500 stocks with company metadata | `GET /sp500/latest/` | Enriched with name, sector, industry, weight |
-| Historical data for S&P 500 stocks with company metadata | `GET /sp500/history/` | Enriched + constituent verification |
+| Historical data for S&P 500 stocks with company metadata | `GET /sp500/history/` | Enriched + constituent verification + alias resolution |
 | Latest prices for any stock (non-S&P 500) | `GET /ohlcv/latest/` | Covers all ~12,500 tickers |
 | Historical data for any stock | `GET /ohlcv/` | Full filtering and pagination |
-| Single S&P 500 stock history | `GET /sp500/{ticker}/history/` | Constituent verification + alias resolution |
 
 ### S&P 500 vs Plain OHLCV
 
@@ -1120,6 +1185,7 @@ The S&P 500 endpoints add two features the plain OHLCV endpoints don't provide:
 | `GET /sp500/latest/` | `tickers=AAPL,MSFT,GOOGL` | Latest S&P 500 OHLCV | Yes |
 | `GET /sp500/latest/` | *(omit tickers)* | Latest for all 503 constituents | Yes |
 | `GET /sp500/history/` | `tickers=AAPL,MSFT,GOOGL` | Paginated S&P 500 history | Yes |
+| `GET /sp500/history/` | *(omit tickers)* | Paginated history for all active constituents | Yes |
 
 ---
 
@@ -1316,6 +1382,15 @@ For local development, use `http://localhost:8001` instead.
 |-------|------|-------------|
 | `data` | array | Array of Ticker Alias objects |
 | `total` | integer | Total number of aliases |
+
+### SQL Query Response Object
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `columns` | array | Column names in the result set |
+| `rows` | array | Result rows as list of dictionaries |
+| `row_count` | integer | Number of rows returned |
+| `truncated` | boolean | `true` if the result was truncated due to the row limit |
 
 ---
 

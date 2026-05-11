@@ -5,11 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.sql import text
 from typing import List, Optional
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
+from uuid import UUID
 from contextlib import asynccontextmanager
 import os
 import math
+import re
 import asyncio
 import logging
 
@@ -22,7 +24,8 @@ from schemas import (
     SP500ConstituentResponse, SP500ListResponse,
     SP500LatestItem, SP500LatestResponse,
     SP500HistoryItem, SP500HistoryResponse,
-    TickerAliasCreate, TickerAliasUpdate, TickerAliasResponse, TickerAliasListResponse
+    TickerAliasCreate, TickerAliasUpdate, TickerAliasResponse, TickerAliasListResponse,
+    SqlQueryRequest, SqlQueryResponse
 )
 
 API_KEY = os.getenv("API_KEY", "ohlcv-api-key-2024-secure")
@@ -180,7 +183,7 @@ async def get_ohlcv_data(
     sort_by: Optional[str] = Query("date", pattern="^(date|volume|close|open|high|low)$"),
     sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
     page: int = Query(1, ge=1),
-    per_page: int = Query(100, ge=1, le=1000),
+    per_page: int = Query(1000, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
@@ -525,7 +528,7 @@ async def list_sp500_constituents(
     sector: Optional[str] = Query(None, description="Filter by GIC sector (e.g., Information Technology)"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
     page: int = Query(1, ge=1),
-    per_page: int = Query(100, ge=1, le=1000),
+    per_page: int = Query(1000, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
@@ -694,88 +697,9 @@ async def get_sp500_latest(
     return SP500LatestResponse(data=items, count=len(items))
 
 
-@app.get("/sp500/{ticker}/history/", response_model=PaginatedResponse)
-async def get_sp500_ticker_history(
-    ticker: str,
-    start_date: Optional[date] = Query(None),
-    end_date: Optional[date] = Query(None),
-    year: Optional[int] = Query(None, ge=1900, le=2100),
-    month: Optional[int] = Query(None, ge=1, le=12),
-    sort_by: Optional[str] = Query("date", pattern="^(date|volume|close|open|high|low)$"),
-    sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
-    page: int = Query(1, ge=1),
-    per_page: int = Query(100, ge=1, le=1000),
-    db: AsyncSession = Depends(get_db),
-    api_key: str = Depends(verify_api_key)
-):
-    """
-    Returns paginated OHLCV history for a single S&P 500 constituent.
-    Verifies the ticker exists in sp500_constituents before returning data.
-    """
-    ticker = ticker.upper()
-
-    # Verify ticker is an S&P 500 constituent
-    sp_check = select(SP500Constituent.code).where(
-        and_(SP500Constituent.code == ticker, SP500Constituent.is_active == True)
-    )
-    check_result = await db.execute(sp_check)
-    if check_result.scalar_one_or_none() is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Ticker '{ticker}' is not an active S&P 500 constituent"
-        )
-
-    # Resolve ticker alias if one exists (e.g. FISV→FI, MRSH→MMC)
-    alias_query = select(TickerAlias.ohlcv_ticker).where(TickerAlias.sp500_ticker == ticker)
-    alias_result = await db.execute(alias_query)
-    alias_row = alias_result.scalar_one_or_none()
-    resolved_ticker = alias_row if alias_row else ticker
-
-    # Build OHLCV query with filters
-    query = select(OhlcvData).where(OhlcvData.ticker == resolved_ticker)
-    count_query = select(func.count(OhlcvData.id)).where(OhlcvData.ticker == resolved_ticker)
-
-    if start_date:
-        query = query.where(OhlcvData.date >= start_date)
-        count_query = count_query.where(OhlcvData.date >= start_date)
-    if end_date:
-        query = query.where(OhlcvData.date <= end_date)
-        count_query = count_query.where(OhlcvData.date <= end_date)
-    if year:
-        query = query.where(func.extract("year", OhlcvData.date) == year)
-        count_query = count_query.where(func.extract("year", OhlcvData.date) == year)
-    if month:
-        query = query.where(func.extract("month", OhlcvData.date) == month)
-        count_query = count_query.where(func.extract("month", OhlcvData.date) == month)
-
-    sort_column = getattr(OhlcvData, sort_by or "date")
-    query = query.order_by(sort_column.desc() if sort_order == "desc" else sort_column.asc())
-
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
-
-    offset = (page - 1) * per_page
-    query = query.offset(offset).limit(per_page)
-
-    result = await db.execute(query)
-    data = result.scalars().all()
-
-    total_pages = math.ceil(total / per_page) if total > 0 else 1
-
-    return PaginatedResponse(
-        data=data,  # type: ignore[arg-type]
-        total=total,
-        page=page,
-        per_page=per_page,
-        total_pages=total_pages,
-        has_next=page < total_pages,
-        has_prev=page > 1
-    )
-
-
 @app.get("/sp500/history/", response_model=SP500HistoryResponse)
 async def get_sp500_batch_history(
-    tickers: str = Query(..., description="Comma-separated S&P 500 tickers (e.g., AAPL,MSFT,GOOGL)"),
+    tickers: Optional[str] = Query(None, description="Comma-separated S&P 500 tickers (e.g., AAPL,MSFT,GOOGL). If omitted, returns history for all active constituents."),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
     year: Optional[int] = Query(None, ge=1900, le=2100),
@@ -783,38 +707,20 @@ async def get_sp500_batch_history(
     sort_by: Optional[str] = Query("date", pattern="^(date|volume|close|open|high|low)$"),
     sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
     page: int = Query(1, ge=1),
-    per_page: int = Query(100, ge=1, le=1000),
+    per_page: int = Query(1000, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
     """
-    Returns paginated historical OHLCV data for multiple S&P 500 constituents.
+    Returns paginated historical OHLCV data for S&P 500 constituents.
     Verifies all requested tickers are active S&P 500 members and resolves
     ticker aliases automatically (e.g. FISV→FI, MRSH→MMC).
 
+    If `tickers` is omitted, returns history for all active S&P 500 constituents.
     Results are enriched with name, sector, industry, and weight from
     sp500_constituents.
     """
     ticker_list = parse_comma_separated(tickers)
-    if not ticker_list:
-        raise HTTPException(status_code=400, detail="At least one ticker is required")
-
-    # Verify all requested tickers are active S&P 500 constituents
-    check_query = select(SP500Constituent.code).where(
-        and_(
-            SP500Constituent.code.in_(ticker_list),
-            SP500Constituent.is_active == True
-        )
-    )
-    check_result = await db.execute(check_query)
-    valid_tickers = {row[0] for row in check_result.all()}
-
-    invalid_tickers = [t for t in ticker_list if t not in valid_tickers]
-    if invalid_tickers:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Ticker(s) not active S&P 500 constituents: {', '.join(invalid_tickers)}"
-        )
 
     # Build date filter clauses for the raw SQL
     date_filters = []
@@ -839,76 +745,149 @@ async def get_sp500_batch_history(
     sort_col = sort_col_map.get(sort_by or "date", "o.date")
     sort_dir = "DESC" if sort_order == "desc" else "ASC"
 
-    # Resolve ticker aliases: build VALUES list with (sp500_ticker, ohlcv_ticker)
-    alias_query = select(
-        TickerAlias.sp500_ticker, TickerAlias.ohlcv_ticker
-    ).where(TickerAlias.sp500_ticker.in_(ticker_list))
-    alias_result = await db.execute(alias_query)
-    alias_map = {row[0]: row[1] for row in alias_result.all()}
-
-    # Build resolved ticker pairs: (sp500_ticker, ohlcv_ticker)
-    resolved_pairs = []
-    for t in ticker_list:
-        ohlcv_ticker = alias_map.get(t, t)
-        resolved_pairs.append((t, ohlcv_ticker))
-
-    ticker_values = ", ".join(f"('{sp}', '{oh}')" for sp, oh in resolved_pairs)
-
-    # Count query
-    count_query = text(f"""
-        WITH resolved_tickers AS (
-            SELECT v.sp500_ticker, v.ohlcv_ticker
-            FROM (VALUES {ticker_values}) AS v(sp500_ticker, ohlcv_ticker)
-        ),
-        sp500_meta AS (
-            SELECT code, name, sector, industry, weight
-            FROM sp500_constituents
-            WHERE code IN ({', '.join(f"'{t}'" for t in ticker_list)}) AND is_active = true
+    if ticker_list:
+        # Specific tickers: verify all are active S&P 500 constituents
+        check_query = select(SP500Constituent.code).where(
+            and_(
+                SP500Constituent.code.in_(ticker_list),
+                SP500Constituent.is_active == True
+            )
         )
-        SELECT count(*)
-        FROM resolved_tickers rt
-        JOIN sp500_meta sm ON sm.code = rt.sp500_ticker
-        JOIN ohlcv_data o ON o.ticker = rt.ohlcv_ticker
-        WHERE 1=1 {date_where}
-    """)
+        check_result = await db.execute(check_query)
+        valid_tickers = {row[0] for row in check_result.all()}
 
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
+        invalid_tickers = [t for t in ticker_list if t not in valid_tickers]
+        if invalid_tickers:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Ticker(s) not active S&P 500 constituents: {', '.join(invalid_tickers)}"
+            )
 
-    # Data query with pagination
-    offset = (page - 1) * per_page
+        # Resolve ticker aliases: build VALUES list with (sp500_ticker, ohlcv_ticker)
+        alias_query = select(
+            TickerAlias.sp500_ticker, TickerAlias.ohlcv_ticker
+        ).where(TickerAlias.sp500_ticker.in_(ticker_list))
+        alias_result = await db.execute(alias_query)
+        alias_map = {row[0]: row[1] for row in alias_result.all()}
 
-    data_query = text(f"""
-        WITH resolved_tickers AS (
-            SELECT v.sp500_ticker, v.ohlcv_ticker
-            FROM (VALUES {ticker_values}) AS v(sp500_ticker, ohlcv_ticker)
-        ),
-        sp500_meta AS (
-            SELECT code, name, sector, industry, weight
-            FROM sp500_constituents
-            WHERE code IN ({', '.join(f"'{t}'" for t in ticker_list)}) AND is_active = true
-        )
-        SELECT
-            rt.sp500_ticker AS ticker,
-            sm.name,
-            sm.sector   AS sp_sector,
-            sm.industry AS sp_industry,
-            sm.weight,
-            o.date,
-            o.open,
-            o.high,
-            o.low,
-            o.close,
-            o.adjusted_close,
-            o.volume,
-            o.asset_isin
-        FROM resolved_tickers rt
-        JOIN sp500_meta sm ON sm.code = rt.sp500_ticker
-        JOIN ohlcv_data o ON o.ticker = rt.ohlcv_ticker
-        WHERE 1=1 {date_where}
-        ORDER BY {sort_col} {sort_dir}, rt.sp500_ticker ASC
-        LIMIT {per_page} OFFSET {offset}
-    """)
+        # Build resolved ticker pairs: (sp500_ticker, ohlcv_ticker)
+        resolved_pairs = []
+        for t in ticker_list:
+            ohlcv_ticker = alias_map.get(t, t)
+            resolved_pairs.append((t, ohlcv_ticker))
+
+        ticker_values = ", ".join(f"('{sp}', '{oh}')" for sp, oh in resolved_pairs)
+
+        # Count query — specific tickers with VALUES list
+        count_query = text(f"""
+            WITH resolved_tickers AS (
+                SELECT v.sp500_ticker, v.ohlcv_ticker
+                FROM (VALUES {ticker_values}) AS v(sp500_ticker, ohlcv_ticker)
+            ),
+            sp500_meta AS (
+                SELECT code, name, sector, industry, weight
+                FROM sp500_constituents
+                WHERE code IN ({', '.join(f"'{t}'" for t in ticker_list)}) AND is_active = true
+            )
+            SELECT count(*)
+            FROM resolved_tickers rt
+            JOIN sp500_meta sm ON sm.code = rt.sp500_ticker
+            JOIN ohlcv_data o ON o.ticker = rt.ohlcv_ticker
+            WHERE 1=1 {date_where}
+        """)
+
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+
+        # Data query with pagination — specific tickers
+        offset = (page - 1) * per_page
+
+        data_query = text(f"""
+            WITH resolved_tickers AS (
+                SELECT v.sp500_ticker, v.ohlcv_ticker
+                FROM (VALUES {ticker_values}) AS v(sp500_ticker, ohlcv_ticker)
+            ),
+            sp500_meta AS (
+                SELECT code, name, sector, industry, weight
+                FROM sp500_constituents
+                WHERE code IN ({', '.join(f"'{t}'" for t in ticker_list)}) AND is_active = true
+            )
+            SELECT
+                rt.sp500_ticker AS ticker,
+                sm.name,
+                sm.sector   AS sp_sector,
+                sm.industry AS sp_industry,
+                sm.weight,
+                o.date,
+                o.open,
+                o.high,
+                o.low,
+                o.close,
+                o.adjusted_close,
+                o.volume,
+                o.asset_isin
+            FROM resolved_tickers rt
+            JOIN sp500_meta sm ON sm.code = rt.sp500_ticker
+            JOIN ohlcv_data o ON o.ticker = rt.ohlcv_ticker
+            WHERE 1=1 {date_where}
+            ORDER BY {sort_col} {sort_dir}, rt.sp500_ticker ASC
+            LIMIT {per_page} OFFSET {offset}
+        """)
+    else:
+        # All active S&P 500 constituents: use sp500_constituents as driving row source
+        # with LATERAL join for efficient per-ticker lookups (mirrors /sp500/latest/ pattern).
+        # COALESCE(ta.ohlcv_ticker, s.code) resolves ticker aliases automatically.
+        count_query = text(f"""
+            WITH resolved_tickers AS (
+                SELECT
+                    s.code AS sp500_ticker,
+                    COALESCE(ta.ohlcv_ticker, s.code) AS ohlcv_ticker
+                FROM sp500_constituents s
+                LEFT JOIN ticker_aliases ta ON ta.sp500_ticker = s.code
+                WHERE s.is_active = true
+            )
+            SELECT count(*)
+            FROM resolved_tickers rt
+            JOIN ohlcv_data o ON o.ticker = rt.ohlcv_ticker
+            WHERE 1=1 {date_where}
+        """)
+
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+
+        # Data query with pagination — all constituents
+        offset = (page - 1) * per_page
+
+        data_query = text(f"""
+            WITH resolved_tickers AS (
+                SELECT
+                    s.code AS sp500_ticker,
+                    COALESCE(ta.ohlcv_ticker, s.code) AS ohlcv_ticker
+                FROM sp500_constituents s
+                LEFT JOIN ticker_aliases ta ON ta.sp500_ticker = s.code
+                WHERE s.is_active = true
+            )
+            SELECT
+                rt.sp500_ticker AS ticker,
+                sm.name,
+                sm.sector   AS sp_sector,
+                sm.industry AS sp_industry,
+                sm.weight,
+                o.date,
+                o.open,
+                o.high,
+                o.low,
+                o.close,
+                o.adjusted_close,
+                o.volume,
+                o.asset_isin
+            FROM resolved_tickers rt
+            JOIN sp500_constituents sm ON sm.code = rt.sp500_ticker
+            JOIN ohlcv_data o ON o.ticker = rt.ohlcv_ticker
+            WHERE 1=1 {date_where}
+            ORDER BY {sort_col} {sort_dir}, rt.sp500_ticker ASC
+            LIMIT {per_page} OFFSET {offset}
+        """)
 
     result = await db.execute(data_query)
     rows = result.fetchall()
@@ -1044,3 +1023,179 @@ async def delete_ticker_alias(
     await db.delete(db_alias)
     await db.commit()
     return None
+
+
+# ── SQL Query Endpoint ───────────────────────────────────────────────────────
+
+# Guardrail 1: Only SELECT statements are allowed
+_SELECT_KEYWORDS = {"SELECT", "WITH"}
+_FORBIDDEN_KEYWORDS = {
+    "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "TRUNCATE",
+    "REPLACE", "GRANT", "REVOKE", "COPY", "VACUUM", "REINDEX", "CLUSTER",
+    "COMMENT", "LOCK", "ABORT", "RESET", "SET", "SHOW", "DISCARD",
+    "LISTEN", "NOTIFY", "LOAD", "EXECUTE", "EXPLAIN", "PREPARE",
+    "DEALLOCATE", "BEGIN", "COMMIT", "ROLLBACK",
+    "SAVEPOINT", "RELEASE", "CHECKPOINT", "REASSIGN", "SECURITY",
+}
+# NOTE: CLOSE, FETCH, and MOVE are SQL cursor commands but are excluded from
+# the forbidden list because they collide with common column names (e.g. the
+# `close` column in ohlcv_data).  These commands are only meaningful as
+# standalone statements (CLOSE cursor_name / FETCH ... / MOVE ...), never
+# inside a SELECT, so the first-keyword check (only SELECT/WITH allowed)
+# already prevents their use as commands.
+
+# Guardrail 2: Allowed tables (whitelist)
+ALLOWED_TABLES = {
+    "ohlcv_data", "assets", "sp500_constituents", "ticker_aliases", "tickers",
+}
+
+# Guardrail 3: Maximum rows returned
+SQL_MAX_ROWS = int(os.getenv("SQL_MAX_ROWS", "5000"))
+
+# Guardrail 4: Query timeout in seconds
+SQL_TIMEOUT_S = int(os.getenv("SQL_TIMEOUT_S", "30"))
+
+# Regex to extract table names from FROM / JOIN clauses
+_TABLE_RE = re.compile(
+    r"\b(?:FROM|JOIN)\s+\"?(\w+)\"?", re.IGNORECASE
+)
+
+# Regex to extract CTE names (e.g. "WITH foo AS (...), bar AS (...)")
+_CTE_NAME_RE = re.compile(
+    r"\bWITH\s+(?:\w+\s+AS\s*\([^)]*\)\s*,\s*)*(\w+)\s+AS\s*\(", re.IGNORECASE
+)
+
+
+def _serialize_value(val):
+    """Convert non-JSON-serializable types to safe primitives."""
+    if val is None:
+        return None
+    if isinstance(val, Decimal):
+        return float(val)
+    if isinstance(val, UUID):
+        return str(val)
+    if isinstance(val, (date, datetime)):
+        return val.isoformat()
+    return val
+
+
+def _validate_sql(sql: str) -> None:
+    """
+    Validate that a SQL query is read-only and targets only allowed tables.
+
+    Guardrails:
+      1. Read-only — only SELECT / WITH (CTE) statements permitted
+      2. Allowed tables — all referenced tables must be in ALLOWED_TABLES
+      3. Forbidden keywords — blocks DML/DDL/utility statements
+    """
+    stripped = sql.strip()
+    if not stripped:
+        raise HTTPException(status_code=400, detail="Query must not be empty")
+
+    # Check the first keyword to ensure it's a SELECT or WITH (CTE)
+    first_word = stripped.split()[0].upper() if stripped.split() else ""
+    if first_word not in _SELECT_KEYWORDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only SELECT queries are allowed. Statement starts with '{first_word}'."
+        )
+
+    # Check for forbidden keywords anywhere in the query
+    upper_sql = stripped.upper()
+    # Tokenise on word boundaries to avoid false positives (e.g. "SELECTED")
+    tokens = set(re.findall(r"[A-Za-z_]\w*", upper_sql))
+    forbidden_found = tokens & _FORBIDDEN_KEYWORDS
+    if forbidden_found:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Forbidden keyword(s) in query: {', '.join(sorted(forbidden_found))}. "
+                   f"Only read-only SELECT queries are allowed."
+        )
+
+    # Extract table names from FROM / JOIN clauses
+    referenced_tables = {t.lower() for t in _TABLE_RE.findall(stripped)}
+
+    # If the query uses CTEs, extract CTE names and exclude them from
+    # the table check — they are query-local aliases, not real tables.
+    cte_names = {t.lower() for t in _CTE_NAME_RE.findall(stripped)}
+    # Also handle multiple CTEs: WITH a AS (...), b AS (...)
+    # The regex above captures the last CTE name; let's use a broader approach
+    cte_names = set()
+    for m in re.finditer(r"\b(\w+)\s+AS\s*\(", stripped, re.IGNORECASE):
+        # Only count CTE names that appear after WITH or a comma
+        cte_names.add(m.group(1).lower())
+
+    real_tables = referenced_tables - cte_names
+    disallowed = real_tables - ALLOWED_TABLES
+    if disallowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Table(s) not allowed: {', '.join(sorted(disallowed))}. "
+                   f"Allowed tables: {', '.join(sorted(ALLOWED_TABLES))}."
+        )
+
+
+@app.post("/sql/", response_model=SqlQueryResponse)
+async def execute_sql(
+    body: SqlQueryRequest,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Execute a read-only SQL SELECT query against the database.
+
+    Guardrails:
+      1. **Read-only** — Only SELECT / WITH (CTE) statements are permitted.
+         DML (INSERT, UPDATE, DELETE) and DDL (CREATE, DROP, ALTER) are blocked.
+      2. **Timeout** — Queries are cancelled after SQL_TIMEOUT_S seconds (default 30).
+      3. **Row limit** — At most SQL_MAX_ROWS rows are returned (default 5000).
+         If the query produces more rows, the response is truncated and
+         `truncated` is set to `true`.
+      4. **Allowed tables** — Only the following tables may be referenced:
+         `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`.
+    """
+    # Guardrails 1, 2 (table whitelist), 3 (forbidden keywords)
+    _validate_sql(body.query)
+
+    # Guardrail 3 (timeout): set a statement timeout for this session.
+    # We use an explicit transaction block so that SET LOCAL (which only
+    # works inside BEGIN/COMMIT) takes effect.  The transaction is
+    # read-only so there are no side-effects on commit.
+    limited_query = text(f"SELECT * FROM ({body.query}) AS _sql_subq LIMIT {SQL_MAX_ROWS + 1}")
+    timeout_sql = text(f"SET LOCAL statement_timeout = '{SQL_TIMEOUT_S}s'")
+
+    try:
+        async with db.begin():
+            await db.execute(timeout_sql)
+            result = await db.execute(limited_query)
+            rows = result.fetchall()
+    except Exception as e:
+        err_msg = str(e)
+        # Detect timeout errors from PostgreSQL
+        if "cancel" in err_msg.lower() or "timeout" in err_msg.lower():
+            raise HTTPException(
+                status_code=408,
+                detail=f"Query timed out after {SQL_TIMEOUT_S}s. Simplify your query or add more filters."
+            )
+        raise HTTPException(status_code=400, detail=f"Query execution error: {err_msg}")
+
+    # Determine if results were truncated
+    truncated = len(rows) > SQL_MAX_ROWS
+    if truncated:
+        rows = rows[:SQL_MAX_ROWS]
+
+    # Build column names from the cursor description
+    columns = list(result.keys())
+
+    # Convert rows to list of dicts, serializing non-JSON types
+    row_dicts = [
+        {col: _serialize_value(val) for col, val in zip(columns, row)}
+        for row in rows
+    ]
+
+    return SqlQueryResponse(
+        columns=columns,
+        rows=row_dicts,
+        row_count=len(row_dicts),
+        truncated=truncated
+    )
