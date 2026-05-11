@@ -15,11 +15,11 @@ All endpoints require an API key passed as a query parameter.
 
 | Parameter | Value |
 |-----------|-------|
-| `api_key` | `0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25` |
+| `api_key` | `YOUR_API_KEY` |
 
 **Example:**
 ```
-https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25
+https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/?api_key=YOUR_API_KEY
 ```
 
 **Error Response (401 Unauthorized):**
@@ -64,13 +64,13 @@ Returns paginated OHLCV records with filtering and sorting options. Supports bat
 ### Example Request — Single Ticker
 
 ```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25&ticker=AAPL&start_date=2026-05-01&end_date=2026-05-07&sort_by=volume&sort_order=desc&page=1&per_page=5"
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/?api_key=YOUR_API_KEY&ticker=AAPL&start_date=2026-05-01&end_date=2026-05-07&sort_by=volume&sort_order=desc&page=1&per_page=5"
 ```
 
 ### Example Request — Batch Multiple Tickers
 
 ```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25&tickers=AAPL,MSFT&start_date=2026-05-01&end_date=2026-05-07&sort_by=date&sort_order=desc&page=1&per_page=3"
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/?api_key=YOUR_API_KEY&tickers=AAPL,MSFT&start_date=2026-05-01&end_date=2026-05-07&sort_by=date&sort_order=desc&page=1&per_page=3"
 ```
 
 ### Example Response
@@ -149,7 +149,7 @@ Returns the most recent OHLCV record for a given ticker.
 #### Example Request
 
 ```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/latest/AAPL?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25"
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/latest/AAPL?api_key=YOUR_API_KEY"
 ```
 
 #### Example Response
@@ -201,7 +201,7 @@ Returns the most recent OHLCV record for one or more tickers in a single request
 #### Example Request — Specific Tickers (Batch)
 
 ```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/latest/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25&tickers=AAPL,MSFT,GOOGL"
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/latest/?api_key=YOUR_API_KEY&tickers=AAPL,MSFT,GOOGL"
 ```
 
 #### Example Response — Specific Tickers
@@ -259,7 +259,7 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/latest/?a
 #### Example Request — All Tickers
 
 ```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/latest/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25"
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/latest/?api_key=YOUR_API_KEY"
 ```
 
 > **Warning:** Omitting the `tickers` parameter returns the latest record for every ticker in the database (~12,500 records). The response can be several MB. Use with caution in bandwidth-constrained environments.
@@ -287,13 +287,13 @@ Returns paginated list of S&P 500 constituents enriched with metadata from the `
 #### Example Request — All Constituents
 
 ```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25&page=1&per_page=5"
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/?api_key=YOUR_API_KEY&page=1&per_page=5"
 ```
 
 #### Example Request — Filter by Sector
 
 ```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25&sector=Technology&per_page=5"
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/?api_key=YOUR_API_KEY&sector=Technology&per_page=5"
 ```
 
 #### Example Response
@@ -373,7 +373,7 @@ Returns the most recent OHLCV record for S&P 500 constituents, sorted by index w
 #### Example Request — Batch Specific Tickers
 
 ```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/latest/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25&tickers=AAPL,MSFT,GOOGL"
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/latest/?api_key=YOUR_API_KEY&tickers=AAPL,MSFT,GOOGL"
 ```
 
 #### Example Response
@@ -434,7 +434,7 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/latest/?a
 #### Example Request — All S&P 500 Constituents
 
 ```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/latest/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25"
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/latest/?api_key=YOUR_API_KEY"
 ```
 
 Returns all 503 constituents with latest OHLCV data, sorted by index weight descending.
@@ -481,7 +481,7 @@ If `tickers` is omitted, returns history for all active S&P 500 constituents.
 #### Example Request — Batch History for Multiple Companies
 
 ```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/history/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25&tickers=AAPL,MSFT,GOOGL&start_date=2026-04-01&end_date=2026-04-07&sort_by=date&sort_order=desc&page=1&per_page=10"
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/history/?api_key=YOUR_API_KEY&tickers=AAPL,MSFT,GOOGL&start_date=2026-04-01&end_date=2026-04-07&sort_by=date&sort_order=desc&page=1&per_page=10"
 ```
 
 #### Example Response
@@ -555,7 +555,7 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/history/?
 #### Example Request — All S&P 500 Constituents
 
 ```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/history/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25&start_date=2026-05-01&end_date=2026-05-07&sort_by=date&sort_order=desc&page=1&per_page=10"
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/history/?api_key=YOUR_API_KEY&start_date=2026-05-01&end_date=2026-05-07&sort_by=date&sort_order=desc&page=1&per_page=10"
 ```
 
 Returns paginated historical OHLCV data for all active S&P 500 constituents within the specified date range. Ticker alias resolution is applied automatically.
@@ -598,7 +598,7 @@ The SQL endpoint enforces four guardrails to protect data integrity and performa
 ### Example Request — Simple Query
 
 ```bash
-curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25" \
+curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"query": "SELECT ticker, date, close, volume FROM ohlcv_data WHERE ticker = '\''AAPL'\'' ORDER BY date DESC LIMIT 5"}'
 ```
@@ -623,7 +623,7 @@ curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=0
 ### Example Request — CTE with JOIN
 
 ```bash
-curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25" \
+curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"query": "WITH latest AS (SELECT ticker, MAX(date) AS latest_date FROM ohlcv_data WHERE ticker IN ('\''AAPL'\'', '\''MSFT'\'') GROUP BY ticker) SELECT l.ticker, l.latest_date, o.close, o.volume FROM latest l JOIN ohlcv_data o ON o.ticker = l.ticker AND o.date = l.latest_date ORDER BY l.ticker"}'
 ```
@@ -631,7 +631,7 @@ curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=0
 ### Example Request — S&P 500 with Asset Metadata
 
 ```bash
-curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25" \
+curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"query": "SELECT s.code, s.name, s.sector, s.weight, a.isin, a.description FROM sp500_constituents s LEFT JOIN assets a ON s.code = a.code WHERE s.is_active = true ORDER BY s.weight DESC LIMIT 10"}'
 ```
