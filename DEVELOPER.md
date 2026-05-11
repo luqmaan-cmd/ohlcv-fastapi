@@ -687,6 +687,161 @@ curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=0
 
 ---
 
+## Response Schemas
+
+All API responses conform to the Pydantic schemas defined in `schemas.py`. Below is a reference of every response schema, its fields, and which endpoint(s) use it.
+
+### OhlcvDataResponse
+
+Used by: `GET /ohlcv/latest/{ticker}`, `GET /ohlcv/{ohlcv_id}`, `POST /ohlcv/`, `PUT /ohlcv/{ohlcv_id}`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `ticker` | string | Yes | Ticker symbol (e.g., `AAPL`) |
+| `date` | date | Yes | Trading date (YYYY-MM-DD) |
+| `open` | decimal | No | Opening price |
+| `high` | decimal | No | Highest price |
+| `low` | decimal | No | Lowest price |
+| `close` | decimal | No | Closing price |
+| `adjusted_close` | decimal | No | Adjusted closing price (corporate actions) |
+| `volume` | integer | No | Trading volume |
+| `asset_isin` | string | No | ISIN code (e.g., `US0378331005`) |
+| `id` | UUID | Yes | Unique record identifier |
+| `created_at` | datetime | No | Record creation timestamp |
+| `updated_at` | datetime | No | Record last-update timestamp |
+
+### PaginatedResponse
+
+Used by: `GET /ohlcv/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[OhlcvDataResponse] | Yes | Array of OHLCV records for the current page |
+| `total` | integer | Yes | Total number of matching records across all pages |
+| `page` | integer | Yes | Current page number |
+| `per_page` | integer | Yes | Number of records per page |
+| `total_pages` | integer | Yes | Total number of pages |
+| `has_next` | boolean | Yes | Whether a next page exists |
+| `has_prev` | boolean | Yes | Whether a previous page exists |
+
+### BatchLatestResponse
+
+Used by: `GET /ohlcv/latest/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[OhlcvDataResponse] | Yes | Array of the latest OHLCV record per ticker |
+| `count` | integer | Yes | Number of records returned |
+
+### SP500ConstituentResponse
+
+Used by: nested inside `SP500ListResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `ticker` | string | Yes | Ticker symbol (e.g., `AAPL`) |
+| `name` | string | No | Company name (e.g., `Apple Inc`) |
+| `sector` | string | No | S&P sector classification |
+| `industry` | string | No | S&P industry classification |
+| `weight` | decimal | No | Index weight (e.g., `0.0671` for ~6.71%) |
+| `is_active` | boolean | No | Whether the constituent is currently active |
+| `isin` | string | No | ISIN code from the `assets` table |
+| `gic_sector` | string | No | GIC sector from the `assets` table |
+| `description` | string | No | Company description from the `assets` table |
+| `country` | string | No | Country of incorporation from the `assets` table |
+
+### SP500ListResponse
+
+Used by: `GET /sp500/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[SP500ConstituentResponse] | Yes | Array of S&P 500 constituent records |
+| `total` | integer | Yes | Total number of matching constituents |
+| `page` | integer | Yes | Current page number |
+| `per_page` | integer | Yes | Number of records per page |
+| `total_pages` | integer | Yes | Total number of pages |
+| `has_next` | boolean | Yes | Whether a next page exists |
+| `has_prev` | boolean | Yes | Whether a previous page exists |
+
+### SP500LatestItem
+
+Used by: nested inside `SP500LatestResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `ticker` | string | Yes | Ticker symbol |
+| `name` | string | No | Company name |
+| `sector` | string | No | S&P sector classification |
+| `industry` | string | No | S&P industry classification |
+| `weight` | decimal | No | Index weight |
+| `date` | date | No | Trading date |
+| `open` | decimal | No | Opening price |
+| `high` | decimal | No | Highest price |
+| `low` | decimal | No | Lowest price |
+| `close` | decimal | No | Closing price |
+| `adjusted_close` | decimal | No | Adjusted closing price |
+| `volume` | integer | No | Trading volume |
+| `asset_isin` | string | No | ISIN code |
+
+### SP500LatestResponse
+
+Used by: `GET /sp500/latest/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[SP500LatestItem] | Yes | Array of S&P 500 constituents with latest OHLCV data |
+| `count` | integer | Yes | Number of records returned |
+
+### SP500HistoryItem
+
+Used by: nested inside `SP500HistoryResponse`
+
+> **Note:** `SP500HistoryItem` has the same fields as `SP500LatestItem` — both combine constituent metadata (name, sector, industry, weight) with OHLCV price data (date, open, high, low, close, adjusted_close, volume, asset_isin).
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `ticker` | string | Yes | Ticker symbol |
+| `name` | string | No | Company name |
+| `sector` | string | No | S&P sector classification |
+| `industry` | string | No | S&P industry classification |
+| `weight` | decimal | No | Index weight |
+| `date` | date | No | Trading date |
+| `open` | decimal | No | Opening price |
+| `high` | decimal | No | Highest price |
+| `low` | decimal | No | Lowest price |
+| `close` | decimal | No | Closing price |
+| `adjusted_close` | decimal | No | Adjusted closing price |
+| `volume` | integer | No | Trading volume |
+| `asset_isin` | string | No | ISIN code |
+
+### SP500HistoryResponse
+
+Used by: `GET /sp500/history/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[SP500HistoryItem] | Yes | Array of S&P 500 historical OHLCV records |
+| `total` | integer | Yes | Total number of matching records |
+| `page` | integer | Yes | Current page number |
+| `per_page` | integer | Yes | Number of records per page |
+| `total_pages` | integer | Yes | Total number of pages |
+| `has_next` | boolean | Yes | Whether a next page exists |
+| `has_prev` | boolean | Yes | Whether a previous page exists |
+
+### SqlQueryResponse
+
+Used by: `POST /sql/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `columns` | list[string] | Yes | Column names in the result set |
+| `rows` | list[dict] | Yes | Result rows as an array of objects |
+| `row_count` | integer | Yes | Number of rows returned |
+| `truncated` | boolean | No (default: `false`) | `true` if the result was truncated due to the row limit |
+
+---
+
 ## Batch Query Patterns
 
 ### When to Use S&P 500 vs Plain OHLCV
