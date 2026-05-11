@@ -1060,11 +1060,6 @@ _TABLE_RE = re.compile(
     r"\b(?:FROM|JOIN)\s+\"?(\w+)\"?", re.IGNORECASE
 )
 
-# Regex to extract CTE names (e.g. "WITH foo AS (...), bar AS (...)")
-_CTE_NAME_RE = re.compile(
-    r"\bWITH\s+(?:\w+\s+AS\s*\([^)]*\)\s*,\s*)*(\w+)\s+AS\s*\(", re.IGNORECASE
-)
-
 
 def _serialize_value(val):
     """Convert non-JSON-serializable types to safe primitives."""
@@ -1117,9 +1112,6 @@ def _validate_sql(sql: str) -> None:
 
     # If the query uses CTEs, extract CTE names and exclude them from
     # the table check — they are query-local aliases, not real tables.
-    cte_names = {t.lower() for t in _CTE_NAME_RE.findall(stripped)}
-    # Also handle multiple CTEs: WITH a AS (...), b AS (...)
-    # The regex above captures the last CTE name; let's use a broader approach
     cte_names = set()
     for m in re.finditer(r"\b(\w+)\s+AS\s*\(", stripped, re.IGNORECASE):
         # Only count CTE names that appear after WITH or a comma
