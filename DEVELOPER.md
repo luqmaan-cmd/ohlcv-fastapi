@@ -562,6 +562,315 @@ Returns paginated historical OHLCV data for all active S&P 500 constituents with
 
 ---
 
+## ETF Data
+
+### List ETF OHLCV Data
+
+Returns paginated OHLCV records for ETFs only. Only returns data for tickers that exist in `etf_index_assets` with `type='etf'`.
+
+**Endpoint:** `GET /etf/`
+
+#### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `ticker` | string | - | Single ETF ticker (e.g., `SPY`) |
+| `tickers` | string | - | Comma-separated ETF tickers (e.g., `SPY,QQQ,IWM`) |
+| `start_date` | date | - | Start date filter (YYYY-MM-DD) |
+| `end_date` | date | - | End date filter (YYYY-MM-DD) |
+| `year` | integer | - | Filter by year (1900-2100) |
+| `month` | integer | - | Filter by month (1-12) |
+| `open_min` | decimal | - | Minimum open price |
+| `open_max` | decimal | - | Maximum open price |
+| `close_min` | decimal | - | Minimum close price |
+| `close_max` | decimal | - | Maximum close price |
+| `volume_min` | integer | - | Minimum volume |
+| `volume_max` | integer | - | Maximum volume |
+| `sort_by` | string | `date` | Sort field: `date`, `volume`, `close`, `open`, `high`, `low` |
+| `sort_order` | string | `desc` | Sort order: `asc`, `desc` |
+| `page` | integer | `1` | Page number (min: 1) |
+| `per_page` | integer | `1000` | Records per page (min: 1, max: 5000) |
+
+#### Example Request
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/etf/?api_key=YOUR_API_KEY&tickers=SPY,QQQ&start_date=2026-05-01&end_date=2026-05-07&sort_by=date&sort_order=desc&page=1&per_page=5"
+```
+
+#### Example Response
+
+```json
+{
+  "data": [
+    {
+      "id": "a1b2c3d4-...",
+      "ticker": "SPY",
+      "date": "2026-05-07",
+      "open": 585.50,
+      "high": 588.20,
+      "low": 583.10,
+      "close": 586.75,
+      "adjusted_close": 586.75,
+      "volume": 65432100,
+      "created_at": "2026-05-08T02:00:00",
+      "updated_at": "2026-05-08T02:00:00"
+    }
+  ],
+  "total": 10,
+  "page": 1,
+  "per_page": 5,
+  "total_pages": 2,
+  "has_next": true,
+  "has_prev": false
+}
+```
+
+### Get Latest ETF Data
+
+#### Single ETF
+
+Returns the most recent OHLCV record for a single ETF, enriched with asset metadata.
+
+**Endpoint:** `GET /etf/latest/{ticker}`
+
+##### Path Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `ticker` | string | ETF ticker symbol (e.g., `SPY`) |
+
+##### Example Request
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/etf/latest/SPY?api_key=YOUR_API_KEY"
+```
+
+##### Example Response
+
+```json
+{
+  "ticker": "SPY",
+  "name": "SPDR S&P 500 ETF Trust",
+  "exchange": "NYSE Arca",
+  "type": "etf",
+  "isin": "US78462F1030",
+  "currency": "USD",
+  "date": "2026-05-07",
+  "open": 585.50,
+  "high": 588.20,
+  "low": 583.10,
+  "close": 586.75,
+  "adjusted_close": 586.75,
+  "volume": 65432100
+}
+```
+
+#### Batch / All ETFs
+
+Returns the most recent OHLCV record for one or more ETFs. If no tickers are specified, returns the latest record for **all** ETFs.
+
+**Endpoint:** `GET /etf/latest/`
+
+> **Note:** This endpoint must be called with the trailing slash. Without it, FastAPI will route the request to `GET /etf/latest/{ticker}`.
+
+##### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `tickers` | string | - | Comma-separated ETF tickers (e.g., `SPY,QQQ,IWM`). If omitted, returns latest for all ~5,500 ETFs. |
+
+##### Example Request — Specific ETFs
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/etf/latest/?api_key=YOUR_API_KEY&tickers=SPY,QQQ,IWM"
+```
+
+##### Example Response
+
+```json
+{
+  "data": [
+    {
+      "ticker": "IWM",
+      "name": "iShares Russell 2000 ETF",
+      "exchange": "NYSE Arca",
+      "type": "etf",
+      "isin": "US4642876555",
+      "currency": "USD",
+      "date": "2026-05-07",
+      "open": 210.50,
+      "high": 212.30,
+      "low": 209.80,
+      "close": 211.45,
+      "adjusted_close": 211.45,
+      "volume": 23456700
+    },
+    {
+      "ticker": "QQQ",
+      "name": "Invesco QQQ Trust",
+      "exchange": "NASDAQ",
+      "type": "etf",
+      "isin": "US46090E1038",
+      "currency": "USD",
+      "date": "2026-05-07",
+      "open": 505.20,
+      "high": 510.50,
+      "low": 503.10,
+      "close": 508.75,
+      "adjusted_close": 508.75,
+      "volume": 34567800
+    },
+    {
+      "ticker": "SPY",
+      "name": "SPDR S&P 500 ETF Trust",
+      "exchange": "NYSE Arca",
+      "type": "etf",
+      "isin": "US78462F1030",
+      "currency": "USD",
+      "date": "2026-05-07",
+      "open": 585.50,
+      "high": 588.20,
+      "low": 583.10,
+      "close": 586.75,
+      "adjusted_close": 586.75,
+      "volume": 65432100
+    }
+  ],
+  "count": 3
+}
+```
+
+##### Example Request — All ETFs
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/etf/latest/?api_key=YOUR_API_KEY"
+```
+
+> **Warning:** Omitting the `tickers` parameter returns the latest record for every ETF in the database (~5,500 records). The response can be several MB. Use with caution in bandwidth-constrained environments.
+
+---
+
+## Index Data
+
+### List Index OHLCV Data
+
+Returns paginated OHLCV records for indices only. Only returns data for tickers that exist in `etf_index_assets` with `type='index'`.
+
+**Endpoint:** `GET /index/`
+
+#### Query Parameters
+
+Same as `GET /etf/` — see [ETF Query Parameters](#list-etf-ohlcv-data) for the full list. The `ticker`/`tickers` parameters accept index symbols (e.g., `GSPC` for S&P 500, `DJI` for Dow Jones).
+
+> **Note:** Index tickers in this API do **not** include the `^` prefix. For example, use `GSPC` instead of `^GSPC`.
+
+#### Example Request
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/index/?api_key=YOUR_API_KEY&tickers=GSPC,DJI&start_date=2026-05-01&end_date=2026-05-07&sort_by=date&sort_order=desc&page=1&per_page=5"
+```
+
+#### Example Response
+
+```json
+{
+  "data": [
+    {
+      "id": "e5f6a7b8-...",
+      "ticker": "GSPC",
+      "date": "2026-05-07",
+      "open": 5630.50,
+      "high": 5655.20,
+      "low": 5610.10,
+      "close": 5642.75,
+      "adjusted_close": 5642.75,
+      "volume": 0,
+      "created_at": "2026-05-08T02:00:00",
+      "updated_at": "2026-05-08T02:00:00"
+    }
+  ],
+  "total": 10,
+  "page": 1,
+  "per_page": 5,
+  "total_pages": 2,
+  "has_next": true,
+  "has_prev": false
+}
+```
+
+### Get Latest Index Data
+
+#### Single Index
+
+Returns the most recent OHLCV record for a single index, enriched with asset metadata.
+
+**Endpoint:** `GET /index/latest/{ticker}`
+
+##### Path Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `ticker` | string | Index ticker symbol (e.g., `GSPC`) |
+
+##### Example Request
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/index/latest/GSPC?api_key=YOUR_API_KEY"
+```
+
+##### Example Response
+
+```json
+{
+  "ticker": "GSPC",
+  "name": "S&P 500 Index",
+  "exchange": "INDEX",
+  "type": "index",
+  "isin": null,
+  "currency": "USD",
+  "date": "2026-05-07",
+  "open": 5630.50,
+  "high": 5655.20,
+  "low": 5610.10,
+  "close": 5642.75,
+  "adjusted_close": 5642.75,
+  "volume": 0
+}
+```
+
+#### Batch / All Indices
+
+Returns the most recent OHLCV record for one or more indices. If no tickers are specified, returns the latest record for **all** indices.
+
+**Endpoint:** `GET /index/latest/`
+
+> **Note:** This endpoint must be called with the trailing slash. Without it, FastAPI will route the request to `GET /index/latest/{ticker}`.
+
+##### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `tickers` | string | - | Comma-separated index tickers (e.g., `GSPC,DJI,IXIC`). If omitted, returns latest for all ~1,600 indices. |
+
+##### Example Request — Specific Indices
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/index/latest/?api_key=YOUR_API_KEY&tickers=GSPC,DJI"
+```
+
+##### Example Request — All Indices
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/index/latest/?api_key=YOUR_API_KEY"
+```
+
+> **Warning:** Omitting the `tickers` parameter returns the latest record for every index in the database (~1,600 records).
+
+---
+
 ## SQL Query Endpoint
 
 Execute read-only SQL SELECT queries directly against the database. This endpoint is designed for ad-hoc data exploration and analysis that isn't covered by the existing REST endpoints.
@@ -577,7 +886,7 @@ The SQL endpoint enforces four guardrails to protect data integrity and performa
 | 1 | **Read-only** | Only `SELECT` and `WITH` (CTE) statements are permitted. DML (`INSERT`, `UPDATE`, `DELETE`) and DDL (`CREATE`, `DROP`, `ALTER`) are blocked. |
 | 2 | **Timeout** | Queries are cancelled after 30 seconds (configurable via `SQL_TIMEOUT_S` env var). Returns `408 Request Timeout` if exceeded. |
 | 3 | **Row limit** | At most 5,000 rows are returned (configurable via `SQL_MAX_ROWS` env var). If the query produces more rows, the response is truncated and `truncated` is set to `true`. |
-| 4 | **Allowed tables** | Only the following tables may be referenced: `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`. |
+| 4 | **Allowed tables** | Only the following tables may be referenced: `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`, `ohlcv_data_etf_index`, `etf_index_assets`. |
 
 ### Allowed Tables
 
@@ -588,6 +897,8 @@ The SQL endpoint enforces four guardrails to protect data integrity and performa
 | `sp500_constituents` | S&P 500 index constituents | `code`, `name`, `sector`, `industry`, `weight`, `is_active` |
 | `ticker_aliases` | Ticker symbol mappings | `sp500_ticker`, `ohlcv_ticker` |
 | `tickers` | Unique ticker lookup table | `ticker` |
+| `ohlcv_data_etf_index` | OHLCV price data for ETFs and indices (7.3M+ rows) | `ticker`, `date`, `open`, `high`, `low`, `close`, `adjusted_close`, `volume` |
+| `etf_index_assets` | ETF and index metadata (5,562 ETFs + 1,666 indices) | `code`, `name`, `exchange`, `type`, `isin`, `currency` |
 
 ### Request Body
 
@@ -840,11 +1151,87 @@ Used by: `POST /sql/`
 | `row_count` | integer | Yes | Number of rows returned |
 | `truncated` | boolean | No (default: `false`) | `true` if the result was truncated due to the row limit |
 
+### EtfIndexOhlcvResponse
+
+Used by: nested inside `EtfIndexPaginatedResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | UUID | Yes | Unique record identifier |
+| `ticker` | string | Yes | Ticker symbol (e.g., `SPY`, `GSPC`) |
+| `date` | date | Yes | Trading date (YYYY-MM-DD) |
+| `open` | decimal | No | Opening price |
+| `high` | decimal | No | Highest price |
+| `low` | decimal | No | Lowest price |
+| `close` | decimal | No | Closing price |
+| `adjusted_close` | decimal | No | Adjusted closing price (corporate actions) |
+| `volume` | integer | No | Trading volume |
+| `created_at` | datetime | No | Record creation timestamp |
+| `updated_at` | datetime | No | Record last-update timestamp |
+
+> **Note:** Unlike `OhlcvDataResponse`, this schema does **not** include `asset_isin` because the `ohlcv_data_etf_index` table lacks that column.
+
+### EtfIndexPaginatedResponse
+
+Used by: `GET /etf/`, `GET /index/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[EtfIndexOhlcvResponse] | Yes | Array of ETF/Index OHLCV records for the current page |
+| `total` | integer | Yes | Total number of matching records across all pages |
+| `page` | integer | Yes | Current page number |
+| `per_page` | integer | Yes | Number of records per page |
+| `total_pages` | integer | Yes | Total number of pages |
+| `has_next` | boolean | Yes | Whether a next page exists |
+| `has_prev` | boolean | Yes | Whether a previous page exists |
+
+### EtfIndexAssetResponse
+
+Used by: internal (metadata from `etf_index_assets`)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `code` | string | Yes | Ticker symbol (e.g., `SPY`, `GSPC`) |
+| `name` | string | No | ETF or index name (e.g., `SPDR S&P 500 ETF Trust`) |
+| `exchange` | string | No | Exchange (e.g., `NYSE Arca`, `INDEX`) |
+| `type` | string | No | Asset type: `etf` or `index` |
+| `isin` | string | No | ISIN code (e.g., `US78462F1030`) |
+| `currency` | string | No | Trading currency (e.g., `USD`) |
+
+### EtfIndexLatestItem
+
+Used by: `GET /etf/latest/{ticker}`, `GET /index/latest/{ticker}`, nested inside `EtfIndexLatestResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `ticker` | string | Yes | Ticker symbol |
+| `name` | string | No | ETF or index name |
+| `exchange` | string | No | Exchange |
+| `type` | string | No | Asset type (`etf` or `index`) |
+| `isin` | string | No | ISIN code |
+| `currency` | string | No | Trading currency |
+| `date` | date | No | Trading date |
+| `open` | decimal | No | Opening price |
+| `high` | decimal | No | Highest price |
+| `low` | decimal | No | Lowest price |
+| `close` | decimal | No | Closing price |
+| `adjusted_close` | decimal | No | Adjusted closing price |
+| `volume` | integer | No | Trading volume |
+
+### EtfIndexLatestResponse
+
+Used by: `GET /etf/latest/`, `GET /index/latest/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[EtfIndexLatestItem] | Yes | Array of ETFs/indices with latest OHLCV data |
+| `count` | integer | Yes | Number of records returned |
+
 ---
 
 ## Batch Query Patterns
 
-### When to Use S&P 500 vs Plain OHLCV
+### When to Use Which Endpoint Group
 
 | Use Case | Endpoint | Why |
 |----------|----------|-----|
@@ -852,6 +1239,10 @@ Used by: `POST /sql/`
 | Historical data for S&P 500 stocks with company metadata | `GET /sp500/history/` | Enriched + constituent verification + alias resolution |
 | Latest prices for any stock (non-S&P 500) | `GET /ohlcv/latest/` | Covers all ~12,500 tickers |
 | Historical data for any stock | `GET /ohlcv/` | Full filtering and pagination |
+| Latest prices for ETFs with metadata | `GET /etf/latest/` | Enriched with name, exchange, isin, currency |
+| Historical data for ETFs | `GET /etf/` | Filtered to ETFs only via `etf_index_assets` |
+| Latest prices for indices with metadata | `GET /index/latest/` | Enriched with name, exchange, isin, currency |
+| Historical data for indices | `GET /index/` | Filtered to indices only via `etf_index_assets` |
 
 ### S&P 500 vs Plain OHLCV
 
@@ -871,3 +1262,9 @@ The S&P 500 endpoints add two features the plain OHLCV endpoints don't provide:
 | `GET /sp500/latest/` | *(omit tickers)* | Latest for all 503 constituents | Yes |
 | `GET /sp500/history/` | `tickers=AAPL,MSFT,GOOGL` | Paginated S&P 500 history | Yes |
 | `GET /sp500/history/` | *(omit tickers)* | Paginated history for all active constituents | Yes |
+| `GET /etf/latest/` | `tickers=SPY,QQQ,IWM` | Latest ETF OHLCV | Yes |
+| `GET /etf/latest/` | *(omit tickers)* | Latest for all ~5,500 ETFs | Yes |
+| `GET /etf/` | `tickers=SPY,QQQ,IWM` | Paginated ETF history | No |
+| `GET /index/latest/` | `tickers=GSPC,DJI,IXIC` | Latest index OHLCV | Yes |
+| `GET /index/latest/` | *(omit tickers)* | Latest for all ~1,600 indices | Yes |
+| `GET /index/` | `tickers=GSPC,DJI,IXIC` | Paginated index history | No |

@@ -16,7 +16,10 @@ import asyncio
 import logging
 
 from database import get_db, engine as async_engine
-from models import OhlcvData, SP500Constituent, Asset, TickerAlias, Ticker
+from models import (
+    OhlcvData, SP500Constituent, Asset, TickerAlias, Ticker,
+    EtfIndexOhlcvData, EtfIndexAsset,
+)
 from schemas import (
     OhlcvDataCreate, OhlcvDataUpdate, OhlcvDataResponse,
     OhlcvDataBulkCreate, PaginatedResponse, OhlcvStatsResponse,
@@ -25,7 +28,9 @@ from schemas import (
     SP500LatestItem, SP500LatestResponse,
     SP500HistoryItem, SP500HistoryResponse,
     TickerAliasCreate, TickerAliasUpdate, TickerAliasResponse, TickerAliasListResponse,
-    SqlQueryRequest, SqlQueryResponse
+    SqlQueryRequest, SqlQueryResponse,
+    EtfIndexOhlcvResponse, EtfIndexPaginatedResponse,
+    EtfIndexAssetResponse, EtfIndexLatestItem, EtfIndexLatestResponse,
 )
 
 API_KEY = os.getenv("API_KEY", "ohlcv-api-key-2024-secure")
@@ -1025,6 +1030,385 @@ async def delete_ticker_alias(
     return None
 
 
+# ── ETF / Index Endpoints ─────────────────────────────────────────────────────
+
+async def _get_etf_index_ohlcv(
+    asset_type: str,
+    ticker: Optional[str],
+    tickers: Optional[str],
+    start_date: Optional[date],
+    end_date: Optional[date],
+    year: Optional[int],
+    month: Optional[int],
+    open_min: Optional[Decimal],
+    open_max: Optional[Decimal],
+    close_min: Optional[Decimal],
+    close_max: Optional[Decimal],
+    volume_min: Optional[int],
+    volume_max: Optional[int],
+    sort_by: Optional[str],
+    sort_order: Optional[str],
+    page: int,
+    per_page: int,
+    db: AsyncSession,
+):
+    """
+    Shared logic for GET /etf/ and GET /index/.
+    Filters ohlcv_data_etf_index by joining to etf_index_assets where type = asset_type.
+    """
+    ticker_list = parse_comma_separated(tickers) or ([ticker.upper()] if ticker else None)
+
+    # Build WHERE clauses
+    conditions = [EtfIndexAsset.type == asset_type]
+    count_conditions = [EtfIndexAsset.type == asset_type]
+
+    if ticker_list:
+        if len(ticker_list) == 1:
+            conditions.append(EtfIndexOhlcvData.ticker == ticker_list[0])
+            count_conditions.append(EtfIndexOhlcvData.ticker == ticker_list[0])
+        else:
+            conditions.append(EtfIndexOhlcvData.ticker.in_(ticker_list))
+            count_conditions.append(EtfIndexOhlcvData.ticker.in_(ticker_list))
+
+    if start_date:
+        conditions.append(EtfIndexOhlcvData.date >= start_date)
+        count_conditions.append(EtfIndexOhlcvData.date >= start_date)
+    if end_date:
+        conditions.append(EtfIndexOhlcvData.date <= end_date)
+        count_conditions.append(EtfIndexOhlcvData.date <= end_date)
+    if year:
+        conditions.append(func.extract("year", EtfIndexOhlcvData.date) == year)
+        count_conditions.append(func.extract("year", EtfIndexOhlcvData.date) == year)
+    if month:
+        conditions.append(func.extract("month", EtfIndexOhlcvData.date) == month)
+        count_conditions.append(func.extract("month", EtfIndexOhlcvData.date) == month)
+    if open_min is not None:
+        conditions.append(EtfIndexOhlcvData.open >= open_min)
+        count_conditions.append(EtfIndexOhlcvData.open >= open_min)
+    if open_max is not None:
+        conditions.append(EtfIndexOhlcvData.open <= open_max)
+        count_conditions.append(EtfIndexOhlcvData.open <= open_max)
+    if close_min is not None:
+        conditions.append(EtfIndexOhlcvData.close >= close_min)
+        count_conditions.append(EtfIndexOhlcvData.close >= close_min)
+    if close_max is not None:
+        conditions.append(EtfIndexOhlcvData.close <= close_max)
+        count_conditions.append(EtfIndexOhlcvData.close <= close_max)
+    if volume_min is not None:
+        conditions.append(EtfIndexOhlcvData.volume >= volume_min)
+        count_conditions.append(EtfIndexOhlcvData.volume >= volume_min)
+    if volume_max is not None:
+        conditions.append(EtfIndexOhlcvData.volume <= volume_max)
+        count_conditions.append(EtfIndexOhlcvData.volume <= volume_max)
+
+    # Count query — only count OHLCV rows that have a matching asset of the right type
+    count_query = select(func.count(EtfIndexOhlcvData.id)).join(
+        EtfIndexAsset, EtfIndexOhlcvData.ticker == EtfIndexAsset.code
+    )
+    for c in count_conditions:
+        count_query = count_query.where(c)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # Data query
+    sort_column = getattr(EtfIndexOhlcvData, sort_by or "date")
+    offset = (page - 1) * per_page
+
+    data_query = select(EtfIndexOhlcvData).join(
+        EtfIndexAsset, EtfIndexOhlcvData.ticker == EtfIndexAsset.code
+    )
+    for c in conditions:
+        data_query = data_query.where(c)
+    data_query = data_query.order_by(
+        sort_column.desc() if sort_order == "desc" else sort_column.asc()
+    ).offset(offset).limit(per_page)
+
+    result = await db.execute(data_query)
+    data = result.scalars().all()
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+
+    return EtfIndexPaginatedResponse(
+        data=data,  # type: ignore[arg-type]
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+
+@app.get("/etf/", response_model=EtfIndexPaginatedResponse)
+async def get_etf_ohlcv_data(
+    ticker: Optional[str] = Query(None, description="Single ETF ticker (e.g., SPY)"),
+    tickers: Optional[str] = Query(None, description="Comma-separated ETF tickers (e.g., SPY,QQQ,IWM)"),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    year: Optional[int] = Query(None, ge=1900, le=2100),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    open_min: Optional[Decimal] = Query(None),
+    open_max: Optional[Decimal] = Query(None),
+    close_min: Optional[Decimal] = Query(None),
+    close_max: Optional[Decimal] = Query(None),
+    volume_min: Optional[int] = Query(None),
+    volume_max: Optional[int] = Query(None),
+    sort_by: Optional[str] = Query("date", pattern="^(date|volume|close|open|high|low)$"),
+    sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(1000, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    List paginated OHLCV data for ETFs.
+    Only returns data for tickers that exist in etf_index_assets with type='etf'.
+    """
+    return await _get_etf_index_ohlcv(
+        asset_type="etf", ticker=ticker, tickers=tickers,
+        start_date=start_date, end_date=end_date, year=year, month=month,
+        open_min=open_min, open_max=open_max,
+        close_min=close_min, close_max=close_max,
+        volume_min=volume_min, volume_max=volume_max,
+        sort_by=sort_by, sort_order=sort_order,
+        page=page, per_page=per_page, db=db,
+    )
+
+
+@app.get("/index/", response_model=EtfIndexPaginatedResponse)
+async def get_index_ohlcv_data(
+    ticker: Optional[str] = Query(None, description="Single index ticker (e.g., GSPC)"),
+    tickers: Optional[str] = Query(None, description="Comma-separated index tickers (e.g., GSPC,DJI,IXIC)"),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    year: Optional[int] = Query(None, ge=1900, le=2100),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    open_min: Optional[Decimal] = Query(None),
+    open_max: Optional[Decimal] = Query(None),
+    close_min: Optional[Decimal] = Query(None),
+    close_max: Optional[Decimal] = Query(None),
+    volume_min: Optional[int] = Query(None),
+    volume_max: Optional[int] = Query(None),
+    sort_by: Optional[str] = Query("date", pattern="^(date|volume|close|open|high|low)$"),
+    sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(1000, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    List paginated OHLCV data for indices.
+    Only returns data for tickers that exist in etf_index_assets with type='index'.
+    """
+    return await _get_etf_index_ohlcv(
+        asset_type="index", ticker=ticker, tickers=tickers,
+        start_date=start_date, end_date=end_date, year=year, month=month,
+        open_min=open_min, open_max=open_max,
+        close_min=close_min, close_max=close_max,
+        volume_min=volume_min, volume_max=volume_max,
+        sort_by=sort_by, sort_order=sort_order,
+        page=page, per_page=per_page, db=db,
+    )
+
+
+async def _get_etf_index_latest_batch(
+    asset_type: str,
+    tickers: Optional[str],
+    db: AsyncSession,
+):
+    """
+    Shared logic for GET /etf/latest/ and GET /index/latest/.
+    Uses LATERAL join driven by etf_index_assets (filtered by type) for efficient
+    per-ticker latest-row lookups. Enriched with name, exchange, isin, currency.
+    """
+    ticker_list = parse_comma_separated(tickers)
+
+    if ticker_list:
+        # Specific tickers: VALUES list as driving row source
+        ticker_values = ", ".join(f"('{t}')" for t in ticker_list)
+        query = text(f"""
+            SELECT t.ticker, a.name, a.exchange, a.type, a.isin, a.currency,
+                   o.id, o.date, o.open, o.high, o.low, o.close,
+                   o.adjusted_close, o.volume
+            FROM (VALUES {ticker_values}) AS t(ticker)
+            JOIN etf_index_assets a ON a.code = t.ticker AND a.type = :asset_type
+            CROSS JOIN LATERAL (
+                SELECT id, date, open, high, low, close, adjusted_close, volume
+                FROM ohlcv_data_etf_index
+                WHERE ticker = t.ticker
+                ORDER BY date DESC
+                LIMIT 1
+            ) o
+            ORDER BY t.ticker ASC
+        """)
+    else:
+        # All tickers of the given type: etf_index_assets as driving row source
+        query = text("""
+            SELECT a.code AS ticker, a.name, a.exchange, a.type, a.isin, a.currency,
+                   o.id, o.date, o.open, o.high, o.low, o.close,
+                   o.adjusted_close, o.volume
+            FROM etf_index_assets a
+            CROSS JOIN LATERAL (
+                SELECT id, date, open, high, low, close, adjusted_close, volume
+                FROM ohlcv_data_etf_index
+                WHERE ticker = a.code
+                ORDER BY date DESC
+                LIMIT 1
+            ) o
+            WHERE a.type = :asset_type
+            ORDER BY a.code ASC
+        """)
+
+    result = await db.execute(query, {"asset_type": asset_type})
+    rows = result.fetchall()
+
+    items = [
+        EtfIndexLatestItem(
+            ticker=row.ticker,
+            name=row.name,
+            exchange=row.exchange,
+            type=row.type,
+            isin=row.isin,
+            currency=row.currency,
+            date=row.date,
+            open=row.open,
+            high=row.high,
+            low=row.low,
+            close=row.close,
+            adjusted_close=row.adjusted_close,
+            volume=row.volume,
+        )
+        for row in rows
+    ]
+
+    return EtfIndexLatestResponse(data=items, count=len(items))
+
+
+@app.get("/etf/latest/", response_model=EtfIndexLatestResponse)
+async def get_etf_latest_batch(
+    tickers: Optional[str] = Query(None, description="Comma-separated ETF tickers (e.g., SPY,QQQ,IWM). If omitted, returns latest for all ETFs."),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest OHLCV record for ETFs.
+    Enriched with name, exchange, isin, and currency from etf_index_assets.
+    Optionally filter by specific tickers.
+    """
+    return await _get_etf_index_latest_batch(asset_type="etf", tickers=tickers, db=db)
+
+
+@app.get("/etf/latest/{ticker}", response_model=EtfIndexLatestItem)
+async def get_etf_latest_single(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest OHLCV record for a single ETF, enriched with asset metadata.
+    """
+    ticker = ticker.upper()
+
+    # Verify the ticker is an ETF
+    asset_query = select(EtfIndexAsset).where(
+        and_(EtfIndexAsset.code == ticker, EtfIndexAsset.type == "etf")
+    )
+    asset_result = await db.execute(asset_query)
+    asset = asset_result.scalar_one_or_none()
+
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"No ETF found with ticker: {ticker}")
+
+    # Get latest OHLCV
+    ohlcv_query = select(EtfIndexOhlcvData).where(
+        EtfIndexOhlcvData.ticker == ticker
+    ).order_by(EtfIndexOhlcvData.date.desc()).limit(1)
+    ohlcv_result = await db.execute(ohlcv_query)
+    ohlcv = ohlcv_result.scalar_one_or_none()
+
+    if not ohlcv:
+        raise HTTPException(status_code=404, detail=f"No OHLCV data found for ETF ticker: {ticker}")
+
+    return EtfIndexLatestItem(
+        ticker=ticker,
+        name=asset.name,          # type: ignore[arg-type]
+        exchange=asset.exchange,  # type: ignore[arg-type]
+        type=asset.type,          # type: ignore[arg-type]
+        isin=asset.isin,          # type: ignore[arg-type]
+        currency=asset.currency,  # type: ignore[arg-type]
+        date=ohlcv.date,          # type: ignore[arg-type]
+        open=ohlcv.open,          # type: ignore[arg-type]
+        high=ohlcv.high,          # type: ignore[arg-type]
+        low=ohlcv.low,            # type: ignore[arg-type]
+        close=ohlcv.close,        # type: ignore[arg-type]
+        adjusted_close=ohlcv.adjusted_close,  # type: ignore[arg-type]
+        volume=ohlcv.volume,      # type: ignore[arg-type]
+    )
+
+
+@app.get("/index/latest/", response_model=EtfIndexLatestResponse)
+async def get_index_latest_batch(
+    tickers: Optional[str] = Query(None, description="Comma-separated index tickers (e.g., GSPC,DJI,IXIC). If omitted, returns latest for all indices."),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest OHLCV record for indices.
+    Enriched with name, exchange, isin, and currency from etf_index_assets.
+    Optionally filter by specific tickers.
+    """
+    return await _get_etf_index_latest_batch(asset_type="index", tickers=tickers, db=db)
+
+
+@app.get("/index/latest/{ticker}", response_model=EtfIndexLatestItem)
+async def get_index_latest_single(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest OHLCV record for a single index, enriched with asset metadata.
+    """
+    ticker = ticker.upper()
+
+    # Verify the ticker is an index
+    asset_query = select(EtfIndexAsset).where(
+        and_(EtfIndexAsset.code == ticker, EtfIndexAsset.type == "index")
+    )
+    asset_result = await db.execute(asset_query)
+    asset = asset_result.scalar_one_or_none()
+
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"No index found with ticker: {ticker}")
+
+    # Get latest OHLCV
+    ohlcv_query = select(EtfIndexOhlcvData).where(
+        EtfIndexOhlcvData.ticker == ticker
+    ).order_by(EtfIndexOhlcvData.date.desc()).limit(1)
+    ohlcv_result = await db.execute(ohlcv_query)
+    ohlcv = ohlcv_result.scalar_one_or_none()
+
+    if not ohlcv:
+        raise HTTPException(status_code=404, detail=f"No OHLCV data found for index ticker: {ticker}")
+
+    return EtfIndexLatestItem(
+        ticker=ticker,
+        name=asset.name,          # type: ignore[arg-type]
+        exchange=asset.exchange,  # type: ignore[arg-type]
+        type=asset.type,          # type: ignore[arg-type]
+        isin=asset.isin,          # type: ignore[arg-type]
+        currency=asset.currency,  # type: ignore[arg-type]
+        date=ohlcv.date,          # type: ignore[arg-type]
+        open=ohlcv.open,          # type: ignore[arg-type]
+        high=ohlcv.high,          # type: ignore[arg-type]
+        low=ohlcv.low,            # type: ignore[arg-type]
+        close=ohlcv.close,        # type: ignore[arg-type]
+        adjusted_close=ohlcv.adjusted_close,  # type: ignore[arg-type]
+        volume=ohlcv.volume,      # type: ignore[arg-type]
+    )
+
+
 # ── SQL Query Endpoint ───────────────────────────────────────────────────────
 
 # Guardrail 1: Only SELECT statements are allowed
@@ -1047,6 +1431,7 @@ _FORBIDDEN_KEYWORDS = {
 # Guardrail 2: Allowed tables (whitelist)
 ALLOWED_TABLES = {
     "ohlcv_data", "assets", "sp500_constituents", "ticker_aliases", "tickers",
+    "ohlcv_data_etf_index", "etf_index_assets",
 }
 
 # Guardrail 3: Maximum rows returned
@@ -1143,8 +1528,9 @@ async def execute_sql(
       3. **Row limit** — At most SQL_MAX_ROWS rows are returned (default 5000).
          If the query produces more rows, the response is truncated and
          `truncated` is set to `true`.
-      4. **Allowed tables** — Only the following tables may be referenced:
-         `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`.
+       4. **Allowed tables** — Only the following tables may be referenced:
+          `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`,
+          `ohlcv_data_etf_index`, `etf_index_assets`.
     """
     # Guardrails 1, 2 (table whitelist), 3 (forbidden keywords)
     _validate_sql(body.query)

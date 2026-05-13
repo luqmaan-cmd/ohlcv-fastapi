@@ -1,11 +1,12 @@
 # OHLCV Data API
 
-High-performance REST API for OHLCV (Open, High, Low, Close, Volume) financial data with **batch queries** and **S&P 500 enriched endpoints**. Query latest prices or full history for multiple companies in a single request, with automatic ticker alias resolution and constituent verification.
+High-performance REST API for OHLCV (Open, High, Low, Close, Volume) financial data with **batch queries**, **S&P 500 enriched endpoints**, and **ETF & Index data**. Query latest prices or full history for multiple companies, ETFs, or indices in a single request, with automatic ticker alias resolution and constituent verification.
 
 ## Highlights
 
 - **Batch queries** — Request data for multiple companies in one API call using `tickers=AAPL,MSFT,GOOGL`
 - **S&P 500 enriched data** — OHLCV records enriched with company name, sector, industry, and index weight
+- **ETF & Index data** — Dedicated endpoints for ETFs (SPY, QQQ, IWM…) and indices (GSPC, DJI, IXIC…) with enriched metadata (name, exchange, ISIN, currency)
 - **SQL query endpoint** — Execute read-only SQL queries directly against the database with built-in guardrails (read-only, timeout, row limit, allowed tables)
 - **Automatic alias resolution** — Mismatched tickers (e.g. `FISV` → `FI`) resolved transparently via the `ticker_aliases` table
 - **Constituent verification** — S&P 500 endpoints reject invalid tickers with clear error messages
@@ -60,6 +61,15 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/history/?tickers
 
 # Historical OHLCV for multiple tickers (non-S&P 500)
 curl "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/?tickers=AAPL,MSFT,GOOGL&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
+
+# Latest OHLCV for specific ETFs — enriched with name, exchange, ISIN, currency
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/etf/latest/?tickers=SPY,QQQ,IWM&api_key=YOUR_KEY"
+
+# Latest OHLCV for specific indices
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/index/latest/?tickers=GSPC,DJI,IXIC&api_key=YOUR_KEY"
+
+# Historical OHLCV for ETFs with date range
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/etf/?tickers=SPY,QQQ&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
 ```
 
 ### Batch Endpoints Summary
@@ -73,6 +83,14 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/?tickers=AAPL,MS
 | `GET /sp500/latest/` | *(omit tickers)* | Latest for all 503 constituents | Yes |
 | `GET /sp500/history/` | `tickers=AAPL,MSFT,GOOGL` | Paginated S&P 500 history | Yes |
 | `GET /sp500/history/` | *(omit tickers)* | Paginated history for all active constituents | Yes |
+| `GET /etf/` | `tickers=SPY,QQQ,IWM` | Paginated ETF history | No |
+| `GET /etf/latest/` | `tickers=SPY,QQQ,IWM` | Latest ETF OHLCV | Yes |
+| `GET /etf/latest/` | *(omit tickers)* | Latest for all ETFs | Yes |
+| `GET /etf/latest/{ticker}` | — | Latest for a single ETF | Yes |
+| `GET /index/` | `tickers=GSPC,DJI,IXIC` | Paginated index history | No |
+| `GET /index/latest/` | `tickers=GSPC,DJI,IXIC` | Latest index OHLCV | Yes |
+| `GET /index/latest/` | *(omit tickers)* | Latest for all indices | Yes |
+| `GET /index/latest/{ticker}` | — | Latest for a single index | Yes |
 
 ## S&P 500 Endpoints
 
@@ -190,7 +208,7 @@ Execute read-only SQL SELECT queries directly against the database. Four guardra
 1. **Read-only** — Only `SELECT` / `WITH` (CTE) statements permitted
 2. **Timeout** — Queries cancelled after 30s (configurable via `SQL_TIMEOUT_S`)
 3. **Row limit** — Max 5,000 rows returned (configurable via `SQL_MAX_ROWS`)
-4. **Allowed tables** — Only `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`
+4. **Allowed tables** — Only `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`, `ohlcv_data_etf_index`, `etf_index_assets`
 
 ```bash
 curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=YOUR_KEY" \
@@ -236,6 +254,22 @@ See [DEVELOPER.md](./DEVELOPER.md) for full documentation including CTE examples
 | GET | `/sp500/` | List S&P 500 constituents (paginated, filterable by sector) |
 | GET | `/sp500/latest/` | Latest OHLCV for S&P 500 constituents (supports batch `tickers`) |
 | GET | `/sp500/history/` | Historical OHLCV for multiple S&P 500 constituents (batch) |
+
+### ETF Data
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/etf/` | List ETF OHLCV data with filters (supports batch `tickers`) |
+| GET | `/etf/latest/` | Batch get latest ETF records (specific tickers or all) |
+| GET | `/etf/latest/{ticker}` | Get latest record for a single ETF |
+
+### Index Data
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/index/` | List index OHLCV data with filters (supports batch `tickers`) |
+| GET | `/index/latest/` | Batch get latest index records (specific tickers or all) |
+| GET | `/index/latest/{ticker}` | Get latest record for a single index |
 
 ### Ticker Aliases
 

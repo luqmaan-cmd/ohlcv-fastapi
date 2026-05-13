@@ -203,3 +203,70 @@ class SqlQueryResponse(BaseModel):
         default=False,
         description="True if the result was truncated due to the row limit"
     )
+
+
+# ── ETF / Index Schemas ──────────────────────────────────────────────────────
+
+class EtfIndexOhlcvResponse(BaseModel):
+    """Single OHLCV record from ohlcv_data_etf_index (no asset_isin column)."""
+    id: UUID
+    ticker: str
+    date: date_type
+    open: Optional[Decimal] = None
+    high: Optional[Decimal] = None
+    low: Optional[Decimal] = None
+    close: Optional[Decimal] = None
+    adjusted_close: Optional[Decimal] = None
+    volume: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class EtfIndexPaginatedResponse(BaseModel):
+    """Paginated list of ETF/Index OHLCV records."""
+    data: List[EtfIndexOhlcvResponse]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class EtfIndexAssetResponse(BaseModel):
+    """Metadata for an ETF or Index asset from etf_index_assets."""
+    code: str
+    name: Optional[str] = None
+    exchange: Optional[str] = None
+    type: Optional[str] = None
+    isin: Optional[str] = None
+    currency: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class EtfIndexLatestItem(BaseModel):
+    """Single ETF/Index with latest OHLCV data, enriched with asset metadata."""
+    ticker: str
+    name: Optional[str] = None
+    exchange: Optional[str] = None
+    type: Optional[str] = None
+    isin: Optional[str] = None
+    currency: Optional[str] = None
+    date: Optional[date_type] = None
+    open: Optional[Decimal] = None
+    high: Optional[Decimal] = None
+    low: Optional[Decimal] = None
+    close: Optional[Decimal] = None
+    adjusted_close: Optional[Decimal] = None
+    volume: Optional[int] = None
+
+
+class EtfIndexLatestResponse(BaseModel):
+    """Latest OHLCV for ETFs or Indices."""
+    data: List[EtfIndexLatestItem]
+    count: int
