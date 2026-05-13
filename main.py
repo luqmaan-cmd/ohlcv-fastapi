@@ -1328,7 +1328,11 @@ async def get_etf_latest_single(
     ohlcv = ohlcv_result.scalar_one_or_none()
 
     if not ohlcv:
-        raise HTTPException(status_code=404, detail=f"No OHLCV data found for ETF ticker: {ticker}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"No OHLCV data found for ETF ticker: {ticker}. "
+                   f"The asset exists in etf_index_assets but has no price data in ohlcv_data_etf_index."
+        )
 
     return EtfIndexLatestItem(
         ticker=ticker,
@@ -1390,7 +1394,11 @@ async def get_index_latest_single(
     ohlcv = ohlcv_result.scalar_one_or_none()
 
     if not ohlcv:
-        raise HTTPException(status_code=404, detail=f"No OHLCV data found for index ticker: {ticker}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"No OHLCV data found for index ticker: {ticker}. "
+                   f"The asset exists in etf_index_assets but has no price data in ohlcv_data_etf_index."
+        )
 
     return EtfIndexLatestItem(
         ticker=ticker,
