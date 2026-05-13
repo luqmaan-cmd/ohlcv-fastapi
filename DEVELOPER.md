@@ -595,7 +595,7 @@ Returns paginated OHLCV records for ETFs only. Only returns data for tickers tha
 #### Example Request
 
 ```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/etf/?api_key=YOUR_API_KEY&tickers=SPY,QQQ&start_date=2026-05-01&end_date=2026-05-07&sort_by=date&sort_order=desc&page=1&per_page=5"
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/etf/?api_key=YOUR_API_KEY&ticker=AAAA&per_page=3"
 ```
 
 #### Example Response
@@ -604,23 +604,23 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/etf/?api_key=YO
 {
   "data": [
     {
-      "id": "a1b2c3d4-...",
-      "ticker": "SPY",
-      "date": "2026-05-07",
-      "open": 585.50,
-      "high": 588.20,
-      "low": 583.10,
-      "close": 586.75,
-      "adjusted_close": 586.75,
-      "volume": 65432100,
-      "created_at": "2026-05-08T02:00:00",
-      "updated_at": "2026-05-08T02:00:00"
+      "id": "b9ea446a-...",
+      "ticker": "AAAA",
+      "date": "2026-05-12",
+      "open": "29.9400",
+      "high": "29.9487",
+      "low": "29.8600",
+      "close": "29.9487",
+      "adjusted_close": "29.9487",
+      "volume": 4617,
+      "created_at": "2026-05-13T15:16:55.809181",
+      "updated_at": "2026-05-13T15:16:55.809181"
     }
   ],
-  "total": 10,
+  "total": 208,
   "page": 1,
-  "per_page": 5,
-  "total_pages": 2,
+  "per_page": 3,
+  "total_pages": 70,
   "has_next": true,
   "has_prev": false
 }
@@ -652,17 +652,17 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/etf/latest/SPY?
 {
   "ticker": "SPY",
   "name": "SPDR S&P 500 ETF Trust",
-  "exchange": "NYSE Arca",
+  "exchange": "US",
   "type": "etf",
-  "isin": "US78462F1030",
+  "isin": null,
   "currency": "USD",
-  "date": "2026-05-07",
-  "open": 585.50,
-  "high": 588.20,
-  "low": 583.10,
-  "close": 586.75,
-  "adjusted_close": 586.75,
-  "volume": 65432100
+  "date": "2026-05-12",
+  "open": "736.8900",
+  "high": "738.8400",
+  "low": "731.8300",
+  "close": "738.1800",
+  "adjusted_close": "738.1800",
+  "volume": 52768657
 }
 ```
 
@@ -695,47 +695,47 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/etf/latest/?api
     {
       "ticker": "IWM",
       "name": "iShares Russell 2000 ETF",
-      "exchange": "NYSE Arca",
+      "exchange": "US",
       "type": "etf",
-      "isin": "US4642876555",
+      "isin": null,
       "currency": "USD",
-      "date": "2026-05-07",
-      "open": 210.50,
-      "high": 212.30,
-      "low": 209.80,
-      "close": 211.45,
-      "adjusted_close": 211.45,
-      "volume": 23456700
+      "date": "2026-05-12",
+      "open": "284.0400",
+      "high": "284.0600",
+      "low": "278.2900",
+      "close": "282.5700",
+      "adjusted_close": "282.5700",
+      "volume": 26076705
     },
     {
       "ticker": "QQQ",
       "name": "Invesco QQQ Trust",
-      "exchange": "NASDAQ",
+      "exchange": "US",
       "type": "etf",
-      "isin": "US46090E1038",
+      "isin": null,
       "currency": "USD",
-      "date": "2026-05-07",
-      "open": 505.20,
-      "high": 510.50,
-      "low": 503.10,
-      "close": 508.75,
-      "adjusted_close": 508.75,
-      "volume": 34567800
+      "date": "2026-05-12",
+      "open": "708.1750",
+      "high": "710.1800",
+      "low": "696.6600",
+      "close": "707.2400",
+      "adjusted_close": "707.2400",
+      "volume": 43812655
     },
     {
       "ticker": "SPY",
       "name": "SPDR S&P 500 ETF Trust",
-      "exchange": "NYSE Arca",
+      "exchange": "US",
       "type": "etf",
-      "isin": "US78462F1030",
+      "isin": null,
       "currency": "USD",
-      "date": "2026-05-07",
-      "open": 585.50,
-      "high": 588.20,
-      "low": 583.10,
-      "close": 586.75,
-      "adjusted_close": 586.75,
-      "volume": 65432100
+      "date": "2026-05-12",
+      "open": "736.8900",
+      "high": "738.8400",
+      "low": "731.8300",
+      "close": "738.1800",
+      "adjusted_close": "738.1800",
+      "volume": 52768657
     }
   ],
   "count": 3
@@ -780,15 +780,15 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/index/?api_key=
     {
       "id": "e5f6a7b8-...",
       "ticker": "GSPC",
-      "date": "2026-05-07",
-      "open": 5630.50,
-      "high": 5655.20,
-      "low": 5610.10,
-      "close": 5642.75,
-      "adjusted_close": 5642.75,
-      "volume": 0,
-      "created_at": "2026-05-08T02:00:00",
-      "updated_at": "2026-05-08T02:00:00"
+      "date": "2026-05-13",
+      "open": "7409.1200",
+      "high": "7409.1200",
+      "low": "7375.1300",
+      "close": "7386.5000",
+      "adjusted_close": "7386.5000",
+      "volume": 446017255,
+      "created_at": "2026-05-13T15:16:55.809181",
+      "updated_at": "2026-05-13T15:16:55.809181"
     }
   ],
   "total": 10,
@@ -826,17 +826,17 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/index/latest/GS
 {
   "ticker": "GSPC",
   "name": "S&P 500 Index",
-  "exchange": "INDEX",
+  "exchange": "INDX",
   "type": "index",
   "isin": null,
   "currency": "USD",
-  "date": "2026-05-07",
-  "open": 5630.50,
-  "high": 5655.20,
-  "low": 5610.10,
-  "close": 5642.75,
-  "adjusted_close": 5642.75,
-  "volume": 0
+  "date": "2026-05-13",
+  "open": "7409.1200",
+  "high": "7409.1200",
+  "low": "7375.1300",
+  "close": "7386.5000",
+  "adjusted_close": "7386.5000",
+  "volume": 446017255
 }
 ```
 
@@ -969,7 +969,7 @@ curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=Y
 
 ```json
 {
-  "detail": "Table(s) not allowed: pg_class. Allowed tables: assets, ohlcv_data, sp500_constituents, ticker_aliases, tickers."
+  "detail": "Table(s) not allowed: pg_class. Allowed tables: assets, etf_index_assets, ohlcv_data, ohlcv_data_etf_index, sp500_constituents, ticker_aliases, tickers."
 }
 ```
 
@@ -1193,9 +1193,9 @@ Used by: internal (metadata from `etf_index_assets`)
 |-------|------|----------|-------------|
 | `code` | string | Yes | Ticker symbol (e.g., `SPY`, `GSPC`) |
 | `name` | string | No | ETF or index name (e.g., `SPDR S&P 500 ETF Trust`) |
-| `exchange` | string | No | Exchange (e.g., `NYSE Arca`, `INDEX`) |
+| `exchange` | string | No | Exchange (e.g., `US`, `INDX`) |
 | `type` | string | No | Asset type: `etf` or `index` |
-| `isin` | string | No | ISIN code (e.g., `US78462F1030`) |
+| `isin` | string | No | ISIN code (e.g., `US78462F1030`, or `null` for many ETFs/indices) |
 | `currency` | string | No | Trading currency (e.g., `USD`) |
 
 ### EtfIndexLatestItem
