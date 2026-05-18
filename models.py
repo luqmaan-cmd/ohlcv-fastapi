@@ -115,3 +115,53 @@ class GovBondAsset(Base):
     created_at = Column(DateTime)
     updated_at = Column(DateTime)
     country = Column(String(10))
+
+
+class UstBillRate(Base):
+    __tablename__ = "ust_bill_rates"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    date = Column(Date, nullable=False)
+    tenor = Column(String(10), nullable=False)
+    discount = Column(Numeric(18, 6))
+    coupon = Column(Numeric(18, 6))
+    avg_discount = Column(Numeric(18, 6))
+    avg_coupon = Column(Numeric(18, 6))
+    maturity_date = Column(Date)
+    cusip = Column(String(20))
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)
+
+
+class UstLongTermRate(Base):
+    __tablename__ = "ust_long_term_rates"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    date = Column(Date, nullable=False)
+    rate_type = Column(String(30), nullable=False)
+    rate = Column(Numeric(18, 6))
+    extrapolation_factor = Column(Numeric(18, 6))
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)
+
+
+class UstRealYieldRate(Base):
+    __tablename__ = "ust_real_yield_rates"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    date = Column(Date, nullable=False)
+    tenor = Column(String(10), nullable=False)
+    rate = Column(Numeric(18, 6))
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)
+
+
+class UstYieldRate(Base):
+    __tablename__ = "ust_yield_rates"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    date = Column(Date, nullable=False)
+    tenor = Column(String(10), nullable=False)
+    rate = Column(Numeric(18, 6))
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)

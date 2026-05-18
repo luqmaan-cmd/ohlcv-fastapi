@@ -1,6 +1,6 @@
 # OHLCV Data API
 
-High-performance REST API for OHLCV (Open, High, Low, Close, Volume) financial data with **batch queries**, **S&P 500 enriched endpoints**, **ETF & Index data**, and **Government Bond data**. Query latest prices or full history for multiple companies, ETFs, indices, or government bonds in a single request, with automatic ticker alias resolution and constituent verification.
+High-performance REST API for OHLCV (Open, High, Low, Close, Volume) financial data with **batch queries**, **S&P 500 enriched endpoints**, **ETF & Index data**, **Government Bond data**, and **US Treasury Rate data**. Query latest prices or full history for multiple companies, ETFs, indices, government bonds, or US Treasury rates in a single request, with automatic ticker alias resolution and constituent verification.
 
 ## Highlights
 
@@ -8,6 +8,7 @@ High-performance REST API for OHLCV (Open, High, Low, Close, Volume) financial d
 - **S&P 500 enriched data** — OHLCV records enriched with company name, sector, industry, and index weight
 - **ETF & Index data** — Dedicated endpoints for ETFs (SPY, QQQ, IWM…) and indices (GSPC, DJI, IXIC…) with enriched metadata (name, exchange, ISIN, currency)
 - **Government Bond data** — Dedicated endpoints for government bonds (US10Y, UK10Y, DE10Y…) with enriched metadata (name, exchange, type, currency, country) and country filtering
+- **US Treasury Rate data** — Dedicated endpoints for US Treasury bill rates, yield curve rates, real yield rates, and long-term rates with tenor/rate-type filtering and batch queries
 - **SQL query endpoint** — Execute read-only SQL queries directly against the database with built-in guardrails (read-only, timeout, row limit, allowed tables)
 - **Automatic alias resolution** — Mismatched tickers (e.g. `FISV` → `FI`) resolved transparently via the `ticker_aliases` table
 - **Constituent verification** — S&P 500 endpoints reject invalid tickers with clear error messages
@@ -80,6 +81,21 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest/?count
 
 # Historical OHLCV for government bonds with date range
 curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/?tickers=US10Y,UK10Y&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
+
+# Latest US Treasury bill rates for all tenors
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/bill/latest/?api_key=YOUR_KEY"
+
+# Latest US Treasury yield rates for specific tenors
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/latest/?tenors=2Y,5Y,10Y,30Y&api_key=YOUR_KEY"
+
+# Latest US Treasury real yield rate for a single tenor
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/real-yield/latest/10Y?api_key=YOUR_KEY"
+
+# Latest US Treasury long-term rates for all rate types
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/long-term/latest/?api_key=YOUR_KEY"
+
+# Historical US Treasury yield rates with date range and rate filter
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/?tenor=10Y&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
 ```
 
 ### Batch Endpoints Summary
@@ -107,6 +123,22 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/?tickers=US10
 | `GET /gov-bond/latest/` | `countries=US,DE,JP` | Latest gov bond OHLCV by country | Yes |
 | `GET /gov-bond/latest/` | *(omit tickers)* | Latest for all 117 gov bonds | Yes |
 | `GET /gov-bond/latest/{ticker}` | — | Latest for a single gov bond | Yes |
+| `GET /ust/bill/` | `tenor=13WK` or `tenors=4WK,13WK,26WK` | Paginated bill rate history | No |
+| `GET /ust/bill/latest/` | `tenors=4WK,13WK,26WK` | Latest bill rates per tenor | No |
+| `GET /ust/bill/latest/` | *(omit tenors)* | Latest for all 7 bill tenors | No |
+| `GET /ust/bill/latest/{tenor}` | — | Latest for a single bill tenor | No |
+| `GET /ust/long-term/` | `rate_type=BC_20year` or `rate_types=BC_20year,Over_10_Years` | Paginated long-term rate history | No |
+| `GET /ust/long-term/latest/` | `rate_types=BC_20year,Over_10_Years` | Latest long-term rates per type | No |
+| `GET /ust/long-term/latest/` | *(omit rate_types)* | Latest for all 3 long-term rate types | No |
+| `GET /ust/long-term/latest/{rate_type}` | — | Latest for a single long-term rate type | No |
+| `GET /ust/real-yield/` | `tenor=10Y` or `tenors=5Y,10Y,30Y` | Paginated real yield history | No |
+| `GET /ust/real-yield/latest/` | `tenors=5Y,10Y,30Y` | Latest real yield rates per tenor | No |
+| `GET /ust/real-yield/latest/` | *(omit tenors)* | Latest for all 5 real yield tenors | No |
+| `GET /ust/real-yield/latest/{tenor}` | — | Latest for a single real yield tenor | No |
+| `GET /ust/yield/` | `tenor=10Y` or `tenors=2Y,5Y,10Y,30Y` | Paginated yield rate history | No |
+| `GET /ust/yield/latest/` | `tenors=2Y,5Y,10Y,30Y` | Latest yield rates per tenor | No |
+| `GET /ust/yield/latest/` | *(omit tenors)* | Latest for all 14 yield tenors | No |
+| `GET /ust/yield/latest/{tenor}` | — | Latest for a single yield tenor | No |
 
 ## S&P 500 Endpoints
 
@@ -224,7 +256,7 @@ Execute read-only SQL SELECT queries directly against the database. Four guardra
 1. **Read-only** — Only `SELECT` / `WITH` (CTE) statements permitted
 2. **Timeout** — Queries cancelled after 30s (configurable via `SQL_TIMEOUT_S`)
 3. **Row limit** — Max 5,000 rows returned (configurable via `SQL_MAX_ROWS`)
-4. **Allowed tables** — Only `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`, `ohlcv_data_etf_index`, `etf_index_assets`, `ohlcv_data_gov_bonds`, `gov_bond_assets`
+4. **Allowed tables** — Only `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`, `ohlcv_data_etf_index`, `etf_index_assets`, `ohlcv_data_gov_bonds`, `gov_bond_assets`, `ust_bill_rates`, `ust_long_term_rates`, `ust_real_yield_rates`, `ust_yield_rates`
 
 ```bash
 curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=YOUR_KEY" \
@@ -310,6 +342,53 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/?countries=US
 | GET | `/gov-bond/` | List gov bond OHLCV data with filters (supports batch `tickers`, `country`/`countries`) |
 | GET | `/gov-bond/latest/` | Batch get latest gov bond records (specific tickers, countries, or all) |
 | GET | `/gov-bond/latest/{ticker}` | Get latest record for a single government bond |
+
+### US Treasury Rate Data
+
+Dedicated endpoints for US Treasury rates across four categories: bill rates, yield curve rates, real yield rates, and long-term rates. Each category supports tenor or rate-type filtering and batch queries.
+
+> **Note:** Long-term rate types (`BC_20year`, `Over_10_Years`, `Real_Rate`) are **case-sensitive**. All other UST tenors are case-insensitive (automatically uppercased).
+
+```bash
+# Latest US Treasury bill rates for all tenors
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/bill/latest/?api_key=YOUR_KEY"
+
+# Latest US Treasury yield rates for specific tenors
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/latest/?tenors=2Y,5Y,10Y,30Y&api_key=YOUR_KEY"
+
+# Latest US Treasury real yield rate for a single tenor
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/real-yield/latest/10Y?api_key=YOUR_KEY"
+
+# Latest US Treasury long-term rates for all rate types (case-sensitive!)
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/long-term/latest/?api_key=YOUR_KEY"
+
+# Historical US Treasury yield rates with date range
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/?tenor=10Y&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/ust/bill/` | List US Treasury bill rates with filters (supports `tenor`/`tenors`) |
+| GET | `/ust/bill/latest/` | Batch get latest bill rates (specific tenors or all) |
+| GET | `/ust/bill/latest/{tenor}` | Get latest bill rate for a single tenor |
+| GET | `/ust/long-term/` | List US Treasury long-term rates with filters (supports `rate_type`/`rate_types`) |
+| GET | `/ust/long-term/latest/` | Batch get latest long-term rates (specific rate types or all) |
+| GET | `/ust/long-term/latest/{rate_type}` | Get latest long-term rate for a single rate type |
+| GET | `/ust/real-yield/` | List US Treasury real yield rates with filters (supports `tenor`/`tenors`) |
+| GET | `/ust/real-yield/latest/` | Batch get latest real yield rates (specific tenors or all) |
+| GET | `/ust/real-yield/latest/{tenor}` | Get latest real yield rate for a single tenor |
+| GET | `/ust/yield/` | List US Treasury yield curve rates with filters (supports `tenor`/`tenors`) |
+| GET | `/ust/yield/latest/` | Batch get latest yield rates (specific tenors or all) |
+| GET | `/ust/yield/latest/{tenor}` | Get latest yield rate for a single tenor |
+
+#### Distinct Values
+
+| Category | Filter | Values |
+|----------|--------|--------|
+| Bill | `tenor` | `4WK`, `6WK`, `8WK`, `13WK`, `17WK`, `26WK`, `52WK` |
+| Long-Term | `rate_type` | `BC_20year`, `Over_10_Years`, `Real_Rate` *(case-sensitive)* |
+| Real-Yield | `tenor` | `5Y`, `7Y`, `10Y`, `20Y`, `30Y` |
+| Yield | `tenor` | `1M`, `1.5M`, `2M`, `3M`, `4M`, `6M`, `1Y`, `2Y`, `3Y`, `5Y`, `7Y`, `10Y`, `20Y`, `30Y` |
 
 ### Ticker Aliases
 

@@ -1101,6 +1101,658 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest
 
 ---
 
+## US Treasury Rate Data
+
+Dedicated endpoints for US Treasury rates across four categories: bill rates, yield curve rates, real yield rates, and long-term rates. Each category provides paginated history, batch latest, and single-tenor latest endpoints.
+
+> **Case-sensitivity note:** Long-term rate types (`BC_20year`, `Over_10_Years`, `Real_Rate`) are **case-sensitive** — they must be provided exactly as stored in the database. All other UST tenors (bill, real-yield, yield) are case-insensitive and automatically uppercased.
+
+### Distinct Values
+
+| Category | Filter | Valid Values |
+|----------|--------|-------------|
+| Bill | `tenor` | `4WK`, `6WK`, `8WK`, `13WK`, `17WK`, `26WK`, `52WK` |
+| Long-Term | `rate_type` | `BC_20year`, `Over_10_Years`, `Real_Rate` *(case-sensitive)* |
+| Real-Yield | `tenor` | `5Y`, `7Y`, `10Y`, `20Y`, `30Y` |
+| Yield | `tenor` | `1M`, `1.5M`, `2M`, `3M`, `4M`, `6M`, `1Y`, `2Y`, `3Y`, `5Y`, `7Y`, `10Y`, `20Y`, `30Y` |
+
+---
+
+### List US Treasury Bill Rates
+
+Returns paginated US Treasury bill rate records with filtering and sorting options. Supports filtering by tenor(s), date range, and discount/coupon bounds.
+
+**Endpoint:** `GET /ust/bill/`
+
+#### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `tenor` | string | - | Single tenor (e.g., `13WK`) |
+| `tenors` | string | - | Comma-separated tenors (e.g., `4WK,13WK,26WK`) |
+| `start_date` | date | - | Start date filter (YYYY-MM-DD) |
+| `end_date` | date | - | End date filter (YYYY-MM-DD) |
+| `discount_min` | decimal | - | Minimum discount rate |
+| `discount_max` | decimal | - | Maximum discount rate |
+| `coupon_min` | decimal | - | Minimum coupon equivalent rate |
+| `coupon_max` | decimal | - | Maximum coupon equivalent rate |
+| `sort_by` | string | `date` | Sort field: `date`, `discount`, `coupon`, `avg_discount`, `avg_coupon` |
+| `sort_order` | string | `desc` | Sort order: `asc`, `desc` |
+| `page` | integer | `1` | Page number (min: 1) |
+| `per_page` | integer | `1000` | Records per page (min: 1, max: 5000) |
+
+#### Example Request — Single Tenor
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/bill/?api_key=YOUR_API_KEY&tenor=13WK&start_date=2026-01-01&end_date=2026-05-07&sort_by=date&sort_order=desc&page=1&per_page=5"
+```
+
+#### Example Response
+
+```json
+{
+  "data": [
+    {
+      "id": "a1b2c3d4-...",
+      "date": "2026-05-07",
+      "tenor": "13WK",
+      "discount": "4.2650",
+      "coupon": "4.3550",
+      "avg_discount": "4.2650",
+      "avg_coupon": "4.3550",
+      "maturity_date": "2026-08-06",
+      "cusip": "US912796ZG39",
+      "created_at": "2026-05-08T02:00:00.000000",
+      "updated_at": "2026-05-08T02:00:00.000000"
+    }
+  ],
+  "total": 94,
+  "page": 1,
+  "per_page": 5,
+  "total_pages": 19,
+  "has_next": true,
+  "has_prev": false
+}
+```
+
+---
+
+### Get Latest US Treasury Bill Rates
+
+#### Single Tenor
+
+Returns the most recent bill rate record for a single tenor.
+
+**Endpoint:** `GET /ust/bill/latest/{tenor}`
+
+##### Path Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `tenor` | string | Bill tenor (e.g., `13WK`). Case-insensitive. |
+
+##### Example Request
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/bill/latest/13WK?api_key=YOUR_API_KEY"
+```
+
+##### Example Response
+
+```json
+{
+  "tenor": "13WK",
+  "date": "2026-05-07",
+  "discount": "4.2650",
+  "coupon": "4.3550",
+  "avg_discount": "4.2650",
+  "avg_coupon": "4.3550",
+  "maturity_date": "2026-08-06",
+  "cusip": "US912796ZG39"
+}
+```
+
+##### Error Response — Tenor Not Found
+
+```json
+{
+  "detail": "No US Treasury bill rate found for tenor: INVALID"
+}
+```
+
+#### Batch / All Tenors
+
+Returns the most recent bill rate record for one or more tenors. If no tenors are specified, returns the latest record for **all** bill tenors. Uses `DISTINCT ON` for efficient per-tenor latest-row lookups.
+
+**Endpoint:** `GET /ust/bill/latest/`
+
+> **Note:** This endpoint must be called with the trailing slash. Without it, FastAPI will route the request to `GET /ust/bill/latest/{tenor}`.
+
+> **URL Pattern — Batch vs Single Tenor:**
+>
+> ✅ **Batch (specific tenors):** `GET /ust/bill/latest/?tenors=4WK,13WK,26WK`
+>
+> ✅ **All tenors:** `GET /ust/bill/latest/`
+>
+> ✅ **Single tenor (path param):** `GET /ust/bill/latest/13WK`
+>
+> ❌ **Wrong:** `GET /ust/bill/latest/4WK,13WK` — commas not allowed in path params
+
+##### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `tenors` | string | - | Comma-separated tenors (e.g., `4WK,13WK,26WK`). If omitted, returns latest for all 7 bill tenors. |
+
+##### Example Request — Specific Tenors
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/bill/latest/?api_key=YOUR_API_KEY&tenors=4WK,13WK,26WK"
+```
+
+##### Example Response
+
+```json
+{
+  "data": [
+    {
+      "tenor": "13WK",
+      "date": "2026-05-07",
+      "discount": "4.2650",
+      "coupon": "4.3550",
+      "avg_discount": "4.2650",
+      "avg_coupon": "4.3550",
+      "maturity_date": "2026-08-06",
+      "cusip": "US912796ZG39"
+    },
+    {
+      "tenor": "26WK",
+      "date": "2026-05-07",
+      "discount": "4.1900",
+      "coupon": "4.3900",
+      "avg_discount": "4.1900",
+      "avg_coupon": "4.3900",
+      "maturity_date": "2026-11-06",
+      "cusip": "US912796ZH22"
+    },
+    {
+      "tenor": "4WK",
+      "date": "2026-05-07",
+      "discount": "4.3400",
+      "coupon": "4.4100",
+      "avg_discount": "4.3400",
+      "avg_coupon": "4.4100",
+      "maturity_date": "2026-06-04",
+      "cusip": "US912796ZF56"
+    }
+  ],
+  "count": 3
+}
+```
+
+##### Example Request — All Bill Tenors
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/bill/latest/?api_key=YOUR_API_KEY"
+```
+
+Returns the latest record for all 7 bill tenors.
+
+---
+
+### List US Treasury Long-Term Rates
+
+Returns paginated US Treasury long-term rate records with filtering and sorting options. Supports filtering by rate type(s), date range, and rate bounds.
+
+**Endpoint:** `GET /ust/long-term/`
+
+> **Warning:** Long-term rate types are **case-sensitive**. Use exact values: `BC_20year`, `Over_10_Years`, `Real_Rate`.
+
+#### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `rate_type` | string | - | Single rate type (e.g., `BC_20year`) |
+| `rate_types` | string | - | Comma-separated rate types (e.g., `BC_20year,Over_10_Years`) |
+| `start_date` | date | - | Start date filter (YYYY-MM-DD) |
+| `end_date` | date | - | End date filter (YYYY-MM-DD) |
+| `rate_min` | decimal | - | Minimum rate |
+| `rate_max` | decimal | - | Maximum rate |
+| `sort_by` | string | `date` | Sort field: `date`, `rate`, `extrapolation_factor` |
+| `sort_order` | string | `desc` | Sort order: `asc`, `desc` |
+| `page` | integer | `1` | Page number (min: 1) |
+| `per_page` | integer | `1000` | Records per page (min: 1, max: 5000) |
+
+#### Example Request — Single Rate Type
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/long-term/?api_key=YOUR_API_KEY&rate_type=BC_20year&start_date=2026-01-01&sort_by=date&sort_order=desc&page=1&per_page=5"
+```
+
+#### Example Response
+
+```json
+{
+  "data": [
+    {
+      "id": "d4e5f6a7-...",
+      "date": "2026-05-07",
+      "rate_type": "BC_20year",
+      "rate": "4.7100",
+      "extrapolation_factor": "1.0000",
+      "created_at": "2026-05-08T02:00:00.000000",
+      "updated_at": "2026-05-08T02:00:00.000000"
+    }
+  ],
+  "total": 94,
+  "page": 1,
+  "per_page": 5,
+  "total_pages": 19,
+  "has_next": true,
+  "has_prev": false
+}
+```
+
+---
+
+### Get Latest US Treasury Long-Term Rates
+
+#### Single Rate Type
+
+Returns the most recent long-term rate record for a single rate type.
+
+**Endpoint:** `GET /ust/long-term/latest/{rate_type}`
+
+> **Warning:** The `rate_type` path parameter is **case-sensitive**. Use exact values: `BC_20year`, `Over_10_Years`, `Real_Rate`.
+
+##### Path Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `rate_type` | string | Long-term rate type (e.g., `BC_20year`). Case-sensitive. |
+
+##### Example Request
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/long-term/latest/BC_20year?api_key=YOUR_API_KEY"
+```
+
+##### Example Response
+
+```json
+{
+  "rate_type": "BC_20year",
+  "date": "2026-05-07",
+  "rate": "4.7100",
+  "extrapolation_factor": "1.0000"
+}
+```
+
+##### Error Response — Rate Type Not Found
+
+```json
+{
+  "detail": "No US Treasury long-term rate found for rate type: invalid_type"
+}
+```
+
+#### Batch / All Rate Types
+
+Returns the most recent long-term rate record for one or more rate types. If no rate types are specified, returns the latest record for **all** long-term rate types. Uses `DISTINCT ON` for efficient per-rate-type latest-row lookups.
+
+**Endpoint:** `GET /ust/long-term/latest/`
+
+> **Note:** This endpoint must be called with the trailing slash. Without it, FastAPI will route the request to `GET /ust/long-term/latest/{rate_type}`.
+
+> **Warning:** The `rate_types` query parameter is **case-sensitive**. Use exact values: `BC_20year`, `Over_10_Years`, `Real_Rate`.
+
+##### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `rate_types` | string | - | Comma-separated rate types (e.g., `BC_20year,Over_10_Years`). If omitted, returns latest for all 3 long-term rate types. |
+
+##### Example Request — Specific Rate Types
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/long-term/latest/?api_key=YOUR_API_KEY&rate_types=BC_20year,Over_10_Years"
+```
+
+##### Example Response
+
+```json
+{
+  "data": [
+    {
+      "rate_type": "BC_20year",
+      "date": "2026-05-07",
+      "rate": "4.7100",
+      "extrapolation_factor": "1.0000"
+    },
+    {
+      "rate_type": "Over_10_Years",
+      "date": "2026-05-07",
+      "rate": "4.5300",
+      "extrapolation_factor": "1.0000"
+    }
+  ],
+  "count": 2
+}
+```
+
+##### Example Request — All Long-Term Rate Types
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/long-term/latest/?api_key=YOUR_API_KEY"
+```
+
+Returns the latest record for all 3 long-term rate types.
+
+---
+
+### List US Treasury Real Yield Rates
+
+Returns paginated US Treasury real yield rate records with filtering and sorting options. Supports filtering by tenor(s), date range, and rate bounds.
+
+**Endpoint:** `GET /ust/real-yield/`
+
+#### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `tenor` | string | - | Single tenor (e.g., `10Y`) |
+| `tenors` | string | - | Comma-separated tenors (e.g., `5Y,10Y,30Y`) |
+| `start_date` | date | - | Start date filter (YYYY-MM-DD) |
+| `end_date` | date | - | End date filter (YYYY-MM-DD) |
+| `rate_min` | decimal | - | Minimum rate |
+| `rate_max` | decimal | - | Maximum rate |
+| `sort_by` | string | `date` | Sort field: `date`, `rate` |
+| `sort_order` | string | `desc` | Sort order: `asc`, `desc` |
+| `page` | integer | `1` | Page number (min: 1) |
+| `per_page` | integer | `1000` | Records per page (min: 1, max: 5000) |
+
+#### Example Request — Single Tenor
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/real-yield/?api_key=YOUR_API_KEY&tenor=10Y&start_date=2026-01-01&sort_by=date&sort_order=desc&page=1&per_page=5"
+```
+
+#### Example Response
+
+```json
+{
+  "data": [
+    {
+      "id": "b2c3d4e5-...",
+      "date": "2026-05-07",
+      "tenor": "10Y",
+      "rate": "2.0800",
+      "created_at": "2026-05-08T02:00:00.000000",
+      "updated_at": "2026-05-08T02:00:00.000000"
+    }
+  ],
+  "total": 94,
+  "page": 1,
+  "per_page": 5,
+  "total_pages": 19,
+  "has_next": true,
+  "has_prev": false
+}
+```
+
+---
+
+### Get Latest US Treasury Real Yield Rates
+
+#### Single Tenor
+
+Returns the most recent real yield rate record for a single tenor.
+
+**Endpoint:** `GET /ust/real-yield/latest/{tenor}`
+
+##### Path Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `tenor` | string | Real yield tenor (e.g., `10Y`). Case-insensitive. |
+
+##### Example Request
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/real-yield/latest/10Y?api_key=YOUR_API_KEY"
+```
+
+##### Example Response
+
+```json
+{
+  "tenor": "10Y",
+  "date": "2026-05-07",
+  "rate": "2.0800"
+}
+```
+
+##### Error Response — Tenor Not Found
+
+```json
+{
+  "detail": "No US Treasury real yield rate found for tenor: INVALID"
+}
+```
+
+#### Batch / All Tenors
+
+Returns the most recent real yield rate record for one or more tenors. If no tenors are specified, returns the latest record for **all** real yield tenors. Uses `DISTINCT ON` for efficient per-tenor latest-row lookups.
+
+**Endpoint:** `GET /ust/real-yield/latest/`
+
+> **Note:** This endpoint must be called with the trailing slash. Without it, FastAPI will route the request to `GET /ust/real-yield/latest/{tenor}`.
+
+##### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `tenors` | string | - | Comma-separated tenors (e.g., `5Y,10Y,30Y`). If omitted, returns latest for all 5 real yield tenors. |
+
+##### Example Request — Specific Tenors
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/real-yield/latest/?api_key=YOUR_API_KEY&tenors=5Y,10Y,30Y"
+```
+
+##### Example Response
+
+```json
+{
+  "data": [
+    {
+      "tenor": "10Y",
+      "date": "2026-05-07",
+      "rate": "2.0800"
+    },
+    {
+      "tenor": "30Y",
+      "date": "2026-05-07",
+      "rate": "2.4100"
+    },
+    {
+      "tenor": "5Y",
+      "date": "2026-05-07",
+      "rate": "1.8300"
+    }
+  ],
+  "count": 3
+}
+```
+
+##### Example Request — All Real Yield Tenors
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/real-yield/latest/?api_key=YOUR_API_KEY"
+```
+
+Returns the latest record for all 5 real yield tenors.
+
+---
+
+### List US Treasury Yield Rates
+
+Returns paginated US Treasury yield curve rate records with filtering and sorting options. Supports filtering by tenor(s), date range, and rate bounds.
+
+**Endpoint:** `GET /ust/yield/`
+
+#### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `tenor` | string | - | Single tenor (e.g., `10Y`) |
+| `tenors` | string | - | Comma-separated tenors (e.g., `2Y,5Y,10Y,30Y`) |
+| `start_date` | date | - | Start date filter (YYYY-MM-DD) |
+| `end_date` | date | - | End date filter (YYYY-MM-DD) |
+| `rate_min` | decimal | - | Minimum rate |
+| `rate_max` | decimal | - | Maximum rate |
+| `sort_by` | string | `date` | Sort field: `date`, `rate` |
+| `sort_order` | string | `desc` | Sort order: `asc`, `desc` |
+| `page` | integer | `1` | Page number (min: 1) |
+| `per_page` | integer | `1000` | Records per page (min: 1, max: 5000) |
+
+#### Example Request — Single Tenor with Date Range
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/?api_key=YOUR_API_KEY&tenor=10Y&start_date=2026-01-01&end_date=2026-05-07&sort_by=date&sort_order=desc&page=1&per_page=5"
+```
+
+#### Example Response
+
+```json
+{
+  "data": [
+    {
+      "id": "c3d4e5f6-...",
+      "date": "2026-05-07",
+      "tenor": "10Y",
+      "rate": "4.2900",
+      "created_at": "2026-05-08T02:00:00.000000",
+      "updated_at": "2026-05-08T02:00:00.000000"
+    }
+  ],
+  "total": 94,
+  "page": 1,
+  "per_page": 5,
+  "total_pages": 19,
+  "has_next": true,
+  "has_prev": false
+}
+```
+
+---
+
+### Get Latest US Treasury Yield Rates
+
+#### Single Tenor
+
+Returns the most recent yield curve rate record for a single tenor.
+
+**Endpoint:** `GET /ust/yield/latest/{tenor}`
+
+##### Path Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `tenor` | string | Yield tenor (e.g., `10Y`). Case-insensitive. |
+
+##### Example Request
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/latest/10Y?api_key=YOUR_API_KEY"
+```
+
+##### Example Response
+
+```json
+{
+  "tenor": "10Y",
+  "date": "2026-05-07",
+  "rate": "4.2900"
+}
+```
+
+##### Error Response — Tenor Not Found
+
+```json
+{
+  "detail": "No US Treasury yield rate found for tenor: INVALID"
+}
+```
+
+#### Batch / All Tenors
+
+Returns the most recent yield curve rate record for one or more tenors. If no tenors are specified, returns the latest record for **all** yield tenors. Uses `DISTINCT ON` for efficient per-tenor latest-row lookups.
+
+**Endpoint:** `GET /ust/yield/latest/`
+
+> **Note:** This endpoint must be called with the trailing slash. Without it, FastAPI will route the request to `GET /ust/yield/latest/{tenor}`.
+
+##### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `tenors` | string | - | Comma-separated tenors (e.g., `2Y,5Y,10Y,30Y`). If omitted, returns latest for all 14 yield tenors. |
+
+##### Example Request — Specific Tenors
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/latest/?api_key=YOUR_API_KEY&tenors=2Y,5Y,10Y,30Y"
+```
+
+##### Example Response
+
+```json
+{
+  "data": [
+    {
+      "tenor": "10Y",
+      "date": "2026-05-07",
+      "rate": "4.2900"
+    },
+    {
+      "tenor": "2Y",
+      "date": "2026-05-07",
+      "rate": "3.8800"
+    },
+    {
+      "tenor": "30Y",
+      "date": "2026-05-07",
+      "rate": "4.5300"
+    },
+    {
+      "tenor": "5Y",
+      "date": "2026-05-07",
+      "rate": "4.0600"
+    }
+  ],
+  "count": 4
+}
+```
+
+##### Example Request — All Yield Tenors
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/latest/?api_key=YOUR_API_KEY"
+```
+
+Returns the latest record for all 14 yield tenors.
+
+---
+
 ## SQL Query Endpoint
 
 Execute read-only SQL SELECT queries directly against the database. This endpoint is designed for ad-hoc data exploration and analysis that isn't covered by the existing REST endpoints.
@@ -1116,7 +1768,7 @@ The SQL endpoint enforces four guardrails to protect data integrity and performa
 | 1 | **Read-only** | Only `SELECT` and `WITH` (CTE) statements are permitted. DML (`INSERT`, `UPDATE`, `DELETE`) and DDL (`CREATE`, `DROP`, `ALTER`) are blocked. |
 | 2 | **Timeout** | Queries are cancelled after 30 seconds (configurable via `SQL_TIMEOUT_S` env var). Returns `408 Request Timeout` if exceeded. |
 | 3 | **Row limit** | At most 5,000 rows are returned (configurable via `SQL_MAX_ROWS` env var). If the query produces more rows, the response is truncated and `truncated` is set to `true`. |
-| 4 | **Allowed tables** | Only the following tables may be referenced: `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`, `ohlcv_data_etf_index`, `etf_index_assets`, `ohlcv_data_gov_bonds`, `gov_bond_assets`. |
+| 4 | **Allowed tables** | Only the following tables may be referenced: `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`, `ohlcv_data_etf_index`, `etf_index_assets`, `ohlcv_data_gov_bonds`, `gov_bond_assets`, `ust_bill_rates`, `ust_long_term_rates`, `ust_real_yield_rates`, `ust_yield_rates`. |
 
 ### Allowed Tables
 
@@ -1131,6 +1783,10 @@ The SQL endpoint enforces four guardrails to protect data integrity and performa
 | `etf_index_assets` | ETF and index metadata (5,562 ETFs + 1,666 indices) | `code`, `name`, `exchange`, `type`, `isin`, `currency` |
 | `ohlcv_data_gov_bonds` | OHLCV price data for government bonds (678K+ rows) | `ticker`, `date`, `open`, `high`, `low`, `close`, `adjusted_close`, `volume` |
 | `gov_bond_assets` | Government bond metadata (117 bonds, 28 countries) | `code`, `name`, `exchange`, `type`, `currency`, `country` |
+| `ust_bill_rates` | US Treasury bill rates (658 rows) | `date`, `tenor`, `discount`, `coupon`, `avg_discount`, `avg_coupon`, `maturity_date`, `cusip` |
+| `ust_long_term_rates` | US Treasury long-term rates (282 rows) | `date`, `rate_type`, `rate`, `extrapolation_factor` |
+| `ust_real_yield_rates` | US Treasury real yield rates (470 rows) | `date`, `tenor`, `rate` |
+| `ust_yield_rates` | US Treasury yield curve rates (1,316 rows) | `date`, `tenor`, `rate` |
 
 ### Request Body
 
@@ -1524,6 +2180,204 @@ Used by: `GET /gov-bond/latest/`
 | `data` | list[GovBondLatestItem] | Yes | Array of government bonds with latest OHLCV data |
 | `count` | integer | Yes | Number of records returned |
 
+### UstBillRateResponse
+
+Used by: `GET /ust/bill/`, nested inside `UstBillPaginatedResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | UUID | Yes | Unique record identifier |
+| `date` | date | Yes | Rate date (YYYY-MM-DD) |
+| `tenor` | string | Yes | Bill tenor (e.g., `4-Week`, `13-Week`, `26-Week`, `52-Week`) |
+| `discount` | decimal | No | Discount rate |
+| `coupon` | decimal | No | Coupon equivalent rate |
+| `avg_discount` | decimal | No | Average discount rate |
+| `avg_coupon` | decimal | No | Average coupon equivalent rate |
+| `maturity_date` | date | No | Maturity date (YYYY-MM-DD) |
+| `cusip` | string | No | CUSIP identifier |
+| `created_at` | datetime | No | Record creation timestamp |
+| `updated_at` | datetime | No | Record update timestamp |
+
+### UstBillPaginatedResponse
+
+Used by: `GET /ust/bill/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[UstBillRateResponse] | Yes | Array of bill rate records |
+| `total` | integer | Yes | Total number of matching records across all pages |
+| `page` | integer | Yes | Current page number |
+| `per_page` | integer | Yes | Number of records per page |
+| `total_pages` | integer | Yes | Total number of pages |
+| `has_next` | boolean | Yes | Whether a next page exists |
+| `has_prev` | boolean | Yes | Whether a previous page exists |
+
+### UstBillLatestItem
+
+Used by: `GET /ust/bill/latest/{tenor}`, nested inside `UstBillLatestResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `tenor` | string | Yes | Bill tenor (e.g., `4-Week`, `13-Week`, `26-Week`, `52-Week`) |
+| `date` | date | No | Rate date (YYYY-MM-DD) |
+| `discount` | decimal | No | Discount rate |
+| `coupon` | decimal | No | Coupon equivalent rate |
+| `avg_discount` | decimal | No | Average discount rate |
+| `avg_coupon` | decimal | No | Average coupon equivalent rate |
+| `maturity_date` | date | No | Maturity date (YYYY-MM-DD) |
+| `cusip` | string | No | CUSIP identifier |
+
+### UstBillLatestResponse
+
+Used by: `GET /ust/bill/latest/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[UstBillLatestItem] | Yes | Array of bill rates for all tenors |
+| `count` | integer | Yes | Number of records returned |
+
+### UstLongTermRateResponse
+
+Used by: `GET /ust/long-term/`, nested inside `UstLongTermPaginatedResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | UUID | Yes | Unique record identifier |
+| `date` | date | Yes | Rate date (YYYY-MM-DD) |
+| `rate_type` | string | Yes | Rate type (e.g., `LT Composite > 10 Years`, `LT Real Average > 10 Years`) |
+| `rate` | decimal | No | Rate value |
+| `extrapolation_factor` | decimal | No | Extrapolation factor |
+| `created_at` | datetime | No | Record creation timestamp |
+| `updated_at` | datetime | No | Record update timestamp |
+
+> **Note:** The `rate_type` field is **case-sensitive**. Always use the exact values returned by the `/ust/long-term/distinct-values/` endpoint (e.g., `LT Composite > 10 Years`, not `lt composite > 10 years`).
+
+### UstLongTermPaginatedResponse
+
+Used by: `GET /ust/long-term/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[UstLongTermRateResponse] | Yes | Array of long-term rate records |
+| `total` | integer | Yes | Total number of matching records across all pages |
+| `page` | integer | Yes | Current page number |
+| `per_page` | integer | Yes | Number of records per page |
+| `total_pages` | integer | Yes | Total number of pages |
+| `has_next` | boolean | Yes | Whether a next page exists |
+| `has_prev` | boolean | Yes | Whether a previous page exists |
+
+### UstLongTermLatestItem
+
+Used by: `GET /ust/long-term/latest/{rate_type}`, nested inside `UstLongTermLatestResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `rate_type` | string | Yes | Rate type (e.g., `LT Composite > 10 Years`) |
+| `date` | date | No | Rate date (YYYY-MM-DD) |
+| `rate` | decimal | No | Rate value |
+| `extrapolation_factor` | decimal | No | Extrapolation factor |
+
+### UstLongTermLatestResponse
+
+Used by: `GET /ust/long-term/latest/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[UstLongTermLatestItem] | Yes | Array of long-term rates for all rate types |
+| `count` | integer | Yes | Number of records returned |
+
+### UstRealYieldRateResponse
+
+Used by: `GET /ust/real-yield/`, nested inside `UstRealYieldPaginatedResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | UUID | Yes | Unique record identifier |
+| `date` | date | Yes | Rate date (YYYY-MM-DD) |
+| `tenor` | string | Yes | Tenor (e.g., `5-Year`, `10-Year`, `30-Year`) |
+| `rate` | decimal | No | Real yield rate |
+| `created_at` | datetime | No | Record creation timestamp |
+| `updated_at` | datetime | No | Record update timestamp |
+
+### UstRealYieldPaginatedResponse
+
+Used by: `GET /ust/real-yield/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[UstRealYieldRateResponse] | Yes | Array of real yield rate records |
+| `total` | integer | Yes | Total number of matching records across all pages |
+| `page` | integer | Yes | Current page number |
+| `per_page` | integer | Yes | Number of records per page |
+| `total_pages` | integer | Yes | Total number of pages |
+| `has_next` | boolean | Yes | Whether a next page exists |
+| `has_prev` | boolean | Yes | Whether a previous page exists |
+
+### UstRealYieldLatestItem
+
+Used by: `GET /ust/real-yield/latest/{tenor}`, nested inside `UstRealYieldLatestResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `tenor` | string | Yes | Tenor (e.g., `5-Year`, `10-Year`, `30-Year`) |
+| `date` | date | No | Rate date (YYYY-MM-DD) |
+| `rate` | decimal | No | Real yield rate |
+
+### UstRealYieldLatestResponse
+
+Used by: `GET /ust/real-yield/latest/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[UstRealYieldLatestItem] | Yes | Array of real yield rates for all tenors |
+| `count` | integer | Yes | Number of records returned |
+
+### UstYieldRateResponse
+
+Used by: `GET /ust/yield/`, nested inside `UstYieldPaginatedResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | UUID | Yes | Unique record identifier |
+| `date` | date | Yes | Rate date (YYYY-MM-DD) |
+| `tenor` | string | Yes | Tenor (e.g., `1-Month`, `3-Month`, `2-Year`, `10-Year`, `30-Year`) |
+| `rate` | decimal | No | Yield rate |
+| `created_at` | datetime | No | Record creation timestamp |
+| `updated_at` | datetime | No | Record update timestamp |
+
+### UstYieldPaginatedResponse
+
+Used by: `GET /ust/yield/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[UstYieldRateResponse] | Yes | Array of yield rate records |
+| `total` | integer | Yes | Total number of matching records across all pages |
+| `page` | integer | Yes | Current page number |
+| `per_page` | integer | Yes | Number of records per page |
+| `total_pages` | integer | Yes | Total number of pages |
+| `has_next` | boolean | Yes | Whether a next page exists |
+| `has_prev` | boolean | Yes | Whether a previous page exists |
+
+### UstYieldLatestItem
+
+Used by: `GET /ust/yield/latest/{tenor}`, nested inside `UstYieldLatestResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `tenor` | string | Yes | Tenor (e.g., `1-Month`, `3-Month`, `2-Year`, `10-Year`, `30-Year`) |
+| `date` | date | No | Rate date (YYYY-MM-DD) |
+| `rate` | decimal | No | Yield rate |
+
+### UstYieldLatestResponse
+
+Used by: `GET /ust/yield/latest/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[UstYieldLatestItem] | Yes | Array of yield rates for all tenors |
+| `count` | integer | Yes | Number of records returned |
+
 ---
 
 ## Batch Query Patterns
@@ -1542,6 +2396,14 @@ Used by: `GET /gov-bond/latest/`
 | Historical data for indices | `GET /index/` | Filtered to indices only via `etf_index_assets` |
 | Latest prices for government bonds with metadata | `GET /gov-bond/latest/` | Enriched with name, exchange, type, currency, country |
 | Historical data for government bonds | `GET /gov-bond/` | Filtered to gov bonds only via `gov_bond_assets`; supports country filtering |
+| Latest US Treasury bill rates | `GET /ust/bill/latest/` | Returns latest rates for all 4 bill tenors |
+| Historical US Treasury bill rates | `GET /ust/bill/` | Paginated with date and tenor filtering |
+| Latest US Treasury long-term rates | `GET /ust/long-term/latest/` | Returns latest rates for all 2 rate types |
+| Historical US Treasury long-term rates | `GET /ust/long-term/` | Paginated with date and rate_type filtering |
+| Latest US Treasury real yield rates | `GET /ust/real-yield/latest/` | Returns latest rates for all 5 real yield tenors |
+| Historical US Treasury real yield rates | `GET /ust/real-yield/` | Paginated with date and tenor filtering |
+| Latest US Treasury yield curve rates | `GET /ust/yield/latest/` | Returns latest rates for all 14 yield tenors |
+| Historical US Treasury yield curve rates | `GET /ust/yield/` | Paginated with date and tenor filtering |
 
 ### S&P 500 vs Plain OHLCV
 
@@ -1573,3 +2435,15 @@ The S&P 500 endpoints add two features the plain OHLCV endpoints don't provide:
 | `GET /gov-bond/latest/` | `countries=US,DE,JP` | Latest gov bond OHLCV by country | Yes |
 | `GET /gov-bond/latest/` | *(omit tickers)* | Latest for all 117 gov bonds | Yes |
 | `GET /gov-bond/latest/{ticker}` | — | Latest for a single gov bond | Yes |
+| `GET /ust/bill/` | `tenors=4-Week,13-Week` | Paginated bill rate history | No |
+| `GET /ust/bill/latest/` | *(omit tenors)* | Latest for all 4 bill tenors | No |
+| `GET /ust/bill/latest/{tenor}` | — | Latest for a single bill tenor | No |
+| `GET /ust/long-term/` | `rate_types=LT Composite > 10 Years` | Paginated long-term rate history | No |
+| `GET /ust/long-term/latest/` | *(omit rate_types)* | Latest for all 2 rate types | No |
+| `GET /ust/long-term/latest/{rate_type}` | — | Latest for a single rate type | No |
+| `GET /ust/real-yield/` | `tenors=5-Year,10-Year` | Paginated real yield history | No |
+| `GET /ust/real-yield/latest/` | *(omit tenors)* | Latest for all 5 real yield tenors | No |
+| `GET /ust/real-yield/latest/{tenor}` | — | Latest for a single real yield tenor | No |
+| `GET /ust/yield/` | `tenors=2-Year,10-Year,30-Year` | Paginated yield curve history | No |
+| `GET /ust/yield/latest/` | *(omit tenors)* | Latest for all 14 yield tenors | No |
+| `GET /ust/yield/latest/{tenor}` | — | Latest for a single yield tenor | No |

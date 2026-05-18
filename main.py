@@ -20,6 +20,7 @@ from models import (
     OhlcvData, SP500Constituent, Asset, TickerAlias, Ticker,
     EtfIndexOhlcvData, EtfIndexAsset,
     GovBondOhlcvData, GovBondAsset,
+    UstBillRate, UstLongTermRate, UstRealYieldRate, UstYieldRate,
 )
 from schemas import (
     OhlcvDataCreate, OhlcvDataUpdate, OhlcvDataResponse,
@@ -34,6 +35,14 @@ from schemas import (
     EtfIndexAssetResponse, EtfIndexLatestItem, EtfIndexLatestResponse,
     GovBondOhlcvResponse, GovBondPaginatedResponse,
     GovBondLatestItem, GovBondLatestResponse,
+    UstBillRateResponse, UstBillPaginatedResponse,
+    UstBillLatestItem, UstBillLatestResponse,
+    UstLongTermRateResponse, UstLongTermPaginatedResponse,
+    UstLongTermLatestItem, UstLongTermLatestResponse,
+    UstRealYieldRateResponse, UstRealYieldPaginatedResponse,
+    UstRealYieldLatestItem, UstRealYieldLatestResponse,
+    UstYieldRateResponse, UstYieldPaginatedResponse,
+    UstYieldLatestItem, UstYieldLatestResponse,
 )
 
 API_KEY = os.getenv("API_KEY", "ohlcv-api-key-2024-secure")
@@ -170,6 +179,13 @@ def parse_comma_separated(value: Optional[str]) -> Optional[List[str]]:
     if not value:
         return None
     return [v.strip().upper() for v in value.split(",") if v.strip()]
+
+
+def parse_comma_separated_preserve(value: Optional[str]) -> Optional[List[str]]:
+    """Like parse_comma_separated but preserves original case (for case-sensitive DB values)."""
+    if not value:
+        return None
+    return [v.strip() for v in value.split(",") if v.strip()]
 
 
 @app.get("/ohlcv/", response_model=PaginatedResponse)
@@ -1679,6 +1695,598 @@ async def get_gov_bond_latest_single(
     )
 
 
+# ── US Treasury Rate Endpoints ───────────────────────────────────────────────
+
+# --- UST Bill Rates ---
+
+@app.get("/ust/bill/", response_model=UstBillPaginatedResponse)
+async def get_ust_bill_rates(
+    tenor: Optional[str] = Query(None, description="Single tenor (e.g., 4WK, 13WK, 26WK, 52WK)"),
+    tenors: Optional[str] = Query(None, description="Comma-separated tenors (e.g., 4WK,13WK,26WK)"),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    discount_min: Optional[Decimal] = Query(None),
+    discount_max: Optional[Decimal] = Query(None),
+    coupon_min: Optional[Decimal] = Query(None),
+    coupon_max: Optional[Decimal] = Query(None),
+    sort_by: Optional[str] = Query("date", pattern="^(date|discount|coupon|avg_discount|avg_coupon)$"),
+    sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(1000, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    List paginated US Treasury bill rate records.
+    Filter by tenor(s), date range, and discount/coupon bounds.
+    """
+    tenor_list = parse_comma_separated(tenors) or ([tenor.upper()] if tenor else None)
+
+    query = select(UstBillRate)
+    count_query = select(func.count(UstBillRate.id))
+
+    if tenor_list:
+        if len(tenor_list) == 1:
+            query = query.where(UstBillRate.tenor == tenor_list[0])
+            count_query = count_query.where(UstBillRate.tenor == tenor_list[0])
+        else:
+            query = query.where(UstBillRate.tenor.in_(tenor_list))
+            count_query = count_query.where(UstBillRate.tenor.in_(tenor_list))
+
+    if start_date:
+        query = query.where(UstBillRate.date >= start_date)
+        count_query = count_query.where(UstBillRate.date >= start_date)
+    if end_date:
+        query = query.where(UstBillRate.date <= end_date)
+        count_query = count_query.where(UstBillRate.date <= end_date)
+
+    if discount_min is not None:
+        query = query.where(UstBillRate.discount >= discount_min)
+        count_query = count_query.where(UstBillRate.discount >= discount_min)
+    if discount_max is not None:
+        query = query.where(UstBillRate.discount <= discount_max)
+        count_query = count_query.where(UstBillRate.discount <= discount_max)
+    if coupon_min is not None:
+        query = query.where(UstBillRate.coupon >= coupon_min)
+        count_query = count_query.where(UstBillRate.coupon >= coupon_min)
+    if coupon_max is not None:
+        query = query.where(UstBillRate.coupon <= coupon_max)
+        count_query = count_query.where(UstBillRate.coupon <= coupon_max)
+
+    sort_column = getattr(UstBillRate, sort_by or "date")
+    query = query.order_by(sort_column.desc() if sort_order == "desc" else sort_column.asc())
+
+    offset = (page - 1) * per_page
+    query = query.offset(offset).limit(per_page)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    result = await db.execute(query)
+    data = result.scalars().all()
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+
+    return UstBillPaginatedResponse(
+        data=data,  # type: ignore[arg-type]
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+
+@app.get("/ust/bill/latest/", response_model=UstBillLatestResponse)
+async def get_ust_bill_latest(
+    tenors: Optional[str] = Query(None, description="Comma-separated tenors (e.g., 4WK,13WK,26WK). If omitted, returns latest for all tenors."),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest US Treasury bill rate for all or filtered tenors.
+    Uses DISTINCT ON for efficient per-tenor latest-row lookups.
+    """
+    tenor_list = parse_comma_separated(tenors)
+
+    if tenor_list:
+        tenor_values = ", ".join(f"'{t}'" for t in tenor_list)
+        query = text(f"""
+            SELECT DISTINCT ON (tenor) tenor, date, discount, coupon, avg_discount, avg_coupon, maturity_date, cusip
+            FROM ust_bill_rates
+            WHERE tenor IN ({tenor_values})
+            ORDER BY tenor, date DESC
+        """)
+    else:
+        query = text("""
+            SELECT DISTINCT ON (tenor) tenor, date, discount, coupon, avg_discount, avg_coupon, maturity_date, cusip
+            FROM ust_bill_rates
+            ORDER BY tenor, date DESC
+        """)
+
+    result = await db.execute(query)
+    rows = result.fetchall()
+
+    items = [
+        UstBillLatestItem(
+            tenor=row.tenor,
+            date=row.date,
+            discount=row.discount,
+            coupon=row.coupon,
+            avg_discount=row.avg_discount,
+            avg_coupon=row.avg_coupon,
+            maturity_date=row.maturity_date,
+            cusip=row.cusip,
+        )
+        for row in rows
+    ]
+
+    return UstBillLatestResponse(data=items, count=len(items))
+
+
+@app.get("/ust/bill/latest/{tenor}", response_model=UstBillLatestItem)
+async def get_ust_bill_latest_single(
+    tenor: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest US Treasury bill rate for a single tenor.
+    """
+    tenor = tenor.upper()
+
+    query = select(UstBillRate).where(
+        UstBillRate.tenor == tenor
+    ).order_by(UstBillRate.date.desc()).limit(1)
+
+    result = await db.execute(query)
+    row = result.scalar_one_or_none()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"No US Treasury bill rate found for tenor: {tenor}")
+
+    return UstBillLatestItem(
+        tenor=row.tenor,            # type: ignore[arg-type]
+        date=row.date,              # type: ignore[arg-type]
+        discount=row.discount,      # type: ignore[arg-type]
+        coupon=row.coupon,          # type: ignore[arg-type]
+        avg_discount=row.avg_discount,  # type: ignore[arg-type]
+        avg_coupon=row.avg_coupon,  # type: ignore[arg-type]
+        maturity_date=row.maturity_date,  # type: ignore[arg-type]
+        cusip=row.cusip,            # type: ignore[arg-type]
+    )
+
+
+# --- UST Long-Term Rates ---
+
+@app.get("/ust/long-term/", response_model=UstLongTermPaginatedResponse)
+async def get_ust_long_term_rates(
+    rate_type: Optional[str] = Query(None, description="Single rate type (e.g., BC_20year, Over_10_Years, Real_Rate)"),
+    rate_types: Optional[str] = Query(None, description="Comma-separated rate types (e.g., BC_20year,Over_10_Years)"),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    rate_min: Optional[Decimal] = Query(None),
+    rate_max: Optional[Decimal] = Query(None),
+    sort_by: Optional[str] = Query("date", pattern="^(date|rate|extrapolation_factor)$"),
+    sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(1000, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    List paginated US Treasury long-term rate records.
+    Filter by rate_type(s), date range, and rate bounds.
+    """
+    rt_list = parse_comma_separated_preserve(rate_types) or ([rate_type] if rate_type else None)
+
+    query = select(UstLongTermRate)
+    count_query = select(func.count(UstLongTermRate.id))
+
+    if rt_list:
+        if len(rt_list) == 1:
+            query = query.where(UstLongTermRate.rate_type == rt_list[0])
+            count_query = count_query.where(UstLongTermRate.rate_type == rt_list[0])
+        else:
+            query = query.where(UstLongTermRate.rate_type.in_(rt_list))
+            count_query = count_query.where(UstLongTermRate.rate_type.in_(rt_list))
+
+    if start_date:
+        query = query.where(UstLongTermRate.date >= start_date)
+        count_query = count_query.where(UstLongTermRate.date >= start_date)
+    if end_date:
+        query = query.where(UstLongTermRate.date <= end_date)
+        count_query = count_query.where(UstLongTermRate.date <= end_date)
+
+    if rate_min is not None:
+        query = query.where(UstLongTermRate.rate >= rate_min)
+        count_query = count_query.where(UstLongTermRate.rate >= rate_min)
+    if rate_max is not None:
+        query = query.where(UstLongTermRate.rate <= rate_max)
+        count_query = count_query.where(UstLongTermRate.rate <= rate_max)
+
+    sort_column = getattr(UstLongTermRate, sort_by or "date")
+    query = query.order_by(sort_column.desc() if sort_order == "desc" else sort_column.asc())
+
+    offset = (page - 1) * per_page
+    query = query.offset(offset).limit(per_page)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    result = await db.execute(query)
+    data = result.scalars().all()
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+
+    return UstLongTermPaginatedResponse(
+        data=data,  # type: ignore[arg-type]
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+
+@app.get("/ust/long-term/latest/", response_model=UstLongTermLatestResponse)
+async def get_ust_long_term_latest(
+    rate_types: Optional[str] = Query(None, description="Comma-separated rate types (e.g., BC_20year,Over_10_Years). If omitted, returns latest for all rate types."),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest US Treasury long-term rate for all or filtered rate types.
+    Uses DISTINCT ON for efficient per-rate-type latest-row lookups.
+    """
+    rt_list = parse_comma_separated_preserve(rate_types)
+
+    if rt_list:
+        rt_values = ", ".join(f"'{rt}'" for rt in rt_list)
+        query = text(f"""
+            SELECT DISTINCT ON (rate_type) rate_type, date, rate, extrapolation_factor
+            FROM ust_long_term_rates
+            WHERE rate_type IN ({rt_values})
+            ORDER BY rate_type, date DESC
+        """)
+    else:
+        query = text("""
+            SELECT DISTINCT ON (rate_type) rate_type, date, rate, extrapolation_factor
+            FROM ust_long_term_rates
+            ORDER BY rate_type, date DESC
+        """)
+
+    result = await db.execute(query)
+    rows = result.fetchall()
+
+    items = [
+        UstLongTermLatestItem(
+            rate_type=row.rate_type,
+            date=row.date,
+            rate=row.rate,
+            extrapolation_factor=row.extrapolation_factor,
+        )
+        for row in rows
+    ]
+
+    return UstLongTermLatestResponse(data=items, count=len(items))
+
+
+@app.get("/ust/long-term/latest/{rate_type}", response_model=UstLongTermLatestItem)
+async def get_ust_long_term_latest_single(
+    rate_type: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest US Treasury long-term rate for a single rate type.
+    """
+    query = select(UstLongTermRate).where(
+        UstLongTermRate.rate_type == rate_type
+    ).order_by(UstLongTermRate.date.desc()).limit(1)
+
+    result = await db.execute(query)
+    row = result.scalar_one_or_none()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"No US Treasury long-term rate found for rate type: {rate_type}")
+
+    return UstLongTermLatestItem(
+        rate_type=row.rate_type,            # type: ignore[arg-type]
+        date=row.date,                      # type: ignore[arg-type]
+        rate=row.rate,                      # type: ignore[arg-type]
+        extrapolation_factor=row.extrapolation_factor,  # type: ignore[arg-type]
+    )
+
+
+# --- UST Real Yield Rates ---
+
+@app.get("/ust/real-yield/", response_model=UstRealYieldPaginatedResponse)
+async def get_ust_real_yield_rates(
+    tenor: Optional[str] = Query(None, description="Single tenor (e.g., 5Y, 10Y, 30Y)"),
+    tenors: Optional[str] = Query(None, description="Comma-separated tenors (e.g., 5Y,10Y,30Y)"),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    rate_min: Optional[Decimal] = Query(None),
+    rate_max: Optional[Decimal] = Query(None),
+    sort_by: Optional[str] = Query("date", pattern="^(date|rate)$"),
+    sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(1000, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    List paginated US Treasury real yield rate records.
+    Filter by tenor(s), date range, and rate bounds.
+    """
+    tenor_list = parse_comma_separated(tenors) or ([tenor.upper()] if tenor else None)
+
+    query = select(UstRealYieldRate)
+    count_query = select(func.count(UstRealYieldRate.id))
+
+    if tenor_list:
+        if len(tenor_list) == 1:
+            query = query.where(UstRealYieldRate.tenor == tenor_list[0])
+            count_query = count_query.where(UstRealYieldRate.tenor == tenor_list[0])
+        else:
+            query = query.where(UstRealYieldRate.tenor.in_(tenor_list))
+            count_query = count_query.where(UstRealYieldRate.tenor.in_(tenor_list))
+
+    if start_date:
+        query = query.where(UstRealYieldRate.date >= start_date)
+        count_query = count_query.where(UstRealYieldRate.date >= start_date)
+    if end_date:
+        query = query.where(UstRealYieldRate.date <= end_date)
+        count_query = count_query.where(UstRealYieldRate.date <= end_date)
+
+    if rate_min is not None:
+        query = query.where(UstRealYieldRate.rate >= rate_min)
+        count_query = count_query.where(UstRealYieldRate.rate >= rate_min)
+    if rate_max is not None:
+        query = query.where(UstRealYieldRate.rate <= rate_max)
+        count_query = count_query.where(UstRealYieldRate.rate <= rate_max)
+
+    sort_column = getattr(UstRealYieldRate, sort_by or "date")
+    query = query.order_by(sort_column.desc() if sort_order == "desc" else sort_column.asc())
+
+    offset = (page - 1) * per_page
+    query = query.offset(offset).limit(per_page)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    result = await db.execute(query)
+    data = result.scalars().all()
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+
+    return UstRealYieldPaginatedResponse(
+        data=data,  # type: ignore[arg-type]
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+
+@app.get("/ust/real-yield/latest/", response_model=UstRealYieldLatestResponse)
+async def get_ust_real_yield_latest(
+    tenors: Optional[str] = Query(None, description="Comma-separated tenors (e.g., 5Y,10Y,30Y). If omitted, returns latest for all tenors."),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest US Treasury real yield rate for all or filtered tenors.
+    Uses DISTINCT ON for efficient per-tenor latest-row lookups.
+    """
+    tenor_list = parse_comma_separated(tenors)
+
+    if tenor_list:
+        tenor_values = ", ".join(f"'{t}'" for t in tenor_list)
+        query = text(f"""
+            SELECT DISTINCT ON (tenor) tenor, date, rate
+            FROM ust_real_yield_rates
+            WHERE tenor IN ({tenor_values})
+            ORDER BY tenor, date DESC
+        """)
+    else:
+        query = text("""
+            SELECT DISTINCT ON (tenor) tenor, date, rate
+            FROM ust_real_yield_rates
+            ORDER BY tenor, date DESC
+        """)
+
+    result = await db.execute(query)
+    rows = result.fetchall()
+
+    items = [
+        UstRealYieldLatestItem(
+            tenor=row.tenor,
+            date=row.date,
+            rate=row.rate,
+        )
+        for row in rows
+    ]
+
+    return UstRealYieldLatestResponse(data=items, count=len(items))
+
+
+@app.get("/ust/real-yield/latest/{tenor}", response_model=UstRealYieldLatestItem)
+async def get_ust_real_yield_latest_single(
+    tenor: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest US Treasury real yield rate for a single tenor.
+    """
+    tenor = tenor.upper()
+
+    query = select(UstRealYieldRate).where(
+        UstRealYieldRate.tenor == tenor
+    ).order_by(UstRealYieldRate.date.desc()).limit(1)
+
+    result = await db.execute(query)
+    row = result.scalar_one_or_none()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"No US Treasury real yield rate found for tenor: {tenor}")
+
+    return UstRealYieldLatestItem(
+        tenor=row.tenor,           # type: ignore[arg-type]
+        date=row.date,             # type: ignore[arg-type]
+        rate=row.rate,             # type: ignore[arg-type]
+    )
+
+
+# --- UST Yield Rates ---
+
+@app.get("/ust/yield/", response_model=UstYieldPaginatedResponse)
+async def get_ust_yield_rates(
+    tenor: Optional[str] = Query(None, description="Single tenor (e.g., 1M, 3M, 6M, 1Y, 2Y, 5Y, 10Y, 30Y)"),
+    tenors: Optional[str] = Query(None, description="Comma-separated tenors (e.g., 2Y,5Y,10Y,30Y)"),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    rate_min: Optional[Decimal] = Query(None),
+    rate_max: Optional[Decimal] = Query(None),
+    sort_by: Optional[str] = Query("date", pattern="^(date|rate)$"),
+    sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(1000, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    List paginated US Treasury yield rate records.
+    Filter by tenor(s), date range, and rate bounds.
+    """
+    tenor_list = parse_comma_separated(tenors) or ([tenor.upper()] if tenor else None)
+
+    query = select(UstYieldRate)
+    count_query = select(func.count(UstYieldRate.id))
+
+    if tenor_list:
+        if len(tenor_list) == 1:
+            query = query.where(UstYieldRate.tenor == tenor_list[0])
+            count_query = count_query.where(UstYieldRate.tenor == tenor_list[0])
+        else:
+            query = query.where(UstYieldRate.tenor.in_(tenor_list))
+            count_query = count_query.where(UstYieldRate.tenor.in_(tenor_list))
+
+    if start_date:
+        query = query.where(UstYieldRate.date >= start_date)
+        count_query = count_query.where(UstYieldRate.date >= start_date)
+    if end_date:
+        query = query.where(UstYieldRate.date <= end_date)
+        count_query = count_query.where(UstYieldRate.date <= end_date)
+
+    if rate_min is not None:
+        query = query.where(UstYieldRate.rate >= rate_min)
+        count_query = count_query.where(UstYieldRate.rate >= rate_min)
+    if rate_max is not None:
+        query = query.where(UstYieldRate.rate <= rate_max)
+        count_query = count_query.where(UstYieldRate.rate <= rate_max)
+
+    sort_column = getattr(UstYieldRate, sort_by or "date")
+    query = query.order_by(sort_column.desc() if sort_order == "desc" else sort_column.asc())
+
+    offset = (page - 1) * per_page
+    query = query.offset(offset).limit(per_page)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    result = await db.execute(query)
+    data = result.scalars().all()
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+
+    return UstYieldPaginatedResponse(
+        data=data,  # type: ignore[arg-type]
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+
+@app.get("/ust/yield/latest/", response_model=UstYieldLatestResponse)
+async def get_ust_yield_latest(
+    tenors: Optional[str] = Query(None, description="Comma-separated tenors (e.g., 2Y,5Y,10Y,30Y). If omitted, returns latest for all tenors."),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest US Treasury yield rate for all or filtered tenors.
+    Uses DISTINCT ON for efficient per-tenor latest-row lookups.
+    """
+    tenor_list = parse_comma_separated(tenors)
+
+    if tenor_list:
+        tenor_values = ", ".join(f"'{t}'" for t in tenor_list)
+        query = text(f"""
+            SELECT DISTINCT ON (tenor) tenor, date, rate
+            FROM ust_yield_rates
+            WHERE tenor IN ({tenor_values})
+            ORDER BY tenor, date DESC
+        """)
+    else:
+        query = text("""
+            SELECT DISTINCT ON (tenor) tenor, date, rate
+            FROM ust_yield_rates
+            ORDER BY tenor, date DESC
+        """)
+
+    result = await db.execute(query)
+    rows = result.fetchall()
+
+    items = [
+        UstYieldLatestItem(
+            tenor=row.tenor,
+            date=row.date,
+            rate=row.rate,
+        )
+        for row in rows
+    ]
+
+    return UstYieldLatestResponse(data=items, count=len(items))
+
+
+@app.get("/ust/yield/latest/{tenor}", response_model=UstYieldLatestItem)
+async def get_ust_yield_latest_single(
+    tenor: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest US Treasury yield rate for a single tenor.
+    """
+    tenor = tenor.upper()
+
+    query = select(UstYieldRate).where(
+        UstYieldRate.tenor == tenor
+    ).order_by(UstYieldRate.date.desc()).limit(1)
+
+    result = await db.execute(query)
+    row = result.scalar_one_or_none()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"No US Treasury yield rate found for tenor: {tenor}")
+
+    return UstYieldLatestItem(
+        tenor=row.tenor,           # type: ignore[arg-type]
+        date=row.date,             # type: ignore[arg-type]
+        rate=row.rate,             # type: ignore[arg-type]
+    )
+
+
 # ── SQL Query Endpoint ───────────────────────────────────────────────────────
 
 # Guardrail 1: Only SELECT statements are allowed
@@ -1703,6 +2311,7 @@ ALLOWED_TABLES = {
     "ohlcv_data", "assets", "sp500_constituents", "ticker_aliases", "tickers",
     "ohlcv_data_etf_index", "etf_index_assets",
     "ohlcv_data_gov_bonds", "gov_bond_assets",
+    "ust_bill_rates", "ust_long_term_rates", "ust_real_yield_rates", "ust_yield_rates",
 }
 
 # Guardrail 3: Maximum rows returned
@@ -1801,7 +2410,8 @@ async def execute_sql(
          `truncated` is set to `true`.
        4. **Allowed tables** — Only the following tables may be referenced:
           `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`,
-          `ohlcv_data_etf_index`, `etf_index_assets`, `ohlcv_data_gov_bonds`, `gov_bond_assets`.
+          `ohlcv_data_etf_index`, `etf_index_assets`, `ohlcv_data_gov_bonds`, `gov_bond_assets`,
+          `ust_bill_rates`, `ust_long_term_rates`, `ust_real_yield_rates`, `ust_yield_rates`.
     """
     # Guardrails 1, 2 (table whitelist), 3 (forbidden keywords)
     _validate_sql(body.query)

@@ -324,3 +324,171 @@ class GovBondLatestResponse(BaseModel):
     """Latest OHLCV for government bonds."""
     data: List[GovBondLatestItem]
     count: int
+
+
+# ── US Treasury Bill Rate Schemas ────────────────────────────────────────────
+
+class UstBillRateResponse(BaseModel):
+    """Single US Treasury bill rate record."""
+    id: UUID
+    date: date_type
+    tenor: str
+    discount: Optional[Decimal] = None
+    coupon: Optional[Decimal] = None
+    avg_discount: Optional[Decimal] = None
+    avg_coupon: Optional[Decimal] = None
+    maturity_date: Optional[date_type] = None
+    cusip: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UstBillPaginatedResponse(BaseModel):
+    """Paginated list of US Treasury bill rate records."""
+    data: List[UstBillRateResponse]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class UstBillLatestItem(BaseModel):
+    """Latest US Treasury bill rate for a single tenor."""
+    tenor: str
+    date: Optional[date_type] = None
+    discount: Optional[Decimal] = None
+    coupon: Optional[Decimal] = None
+    avg_discount: Optional[Decimal] = None
+    avg_coupon: Optional[Decimal] = None
+    maturity_date: Optional[date_type] = None
+    cusip: Optional[str] = None
+
+
+class UstBillLatestResponse(BaseModel):
+    """Latest US Treasury bill rates for all tenors."""
+    data: List[UstBillLatestItem]
+    count: int
+
+
+# ── US Treasury Long-Term Rate Schemas ──────────────────────────────────────
+
+class UstLongTermRateResponse(BaseModel):
+    """Single US Treasury long-term rate record."""
+    id: UUID
+    date: date_type
+    rate_type: str
+    rate: Optional[Decimal] = None
+    extrapolation_factor: Optional[Decimal] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UstLongTermPaginatedResponse(BaseModel):
+    """Paginated list of US Treasury long-term rate records."""
+    data: List[UstLongTermRateResponse]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class UstLongTermLatestItem(BaseModel):
+    """Latest US Treasury long-term rate for a single rate type."""
+    rate_type: str
+    date: Optional[date_type] = None
+    rate: Optional[Decimal] = None
+    extrapolation_factor: Optional[Decimal] = None
+
+
+class UstLongTermLatestResponse(BaseModel):
+    """Latest US Treasury long-term rates for all rate types."""
+    data: List[UstLongTermLatestItem]
+    count: int
+
+
+# ── US Treasury Real Yield Rate Schemas ─────────────────────────────────────
+
+class UstRealYieldRateResponse(BaseModel):
+    """Single US Treasury real yield rate record."""
+    id: UUID
+    date: date_type
+    tenor: str
+    rate: Optional[Decimal] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UstRealYieldPaginatedResponse(BaseModel):
+    """Paginated list of US Treasury real yield rate records."""
+    data: List[UstRealYieldRateResponse]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class UstRealYieldLatestItem(BaseModel):
+    """Latest US Treasury real yield rate for a single tenor."""
+    tenor: str
+    date: Optional[date_type] = None
+    rate: Optional[Decimal] = None
+
+
+class UstRealYieldLatestResponse(BaseModel):
+    """Latest US Treasury real yield rates for all tenors."""
+    data: List[UstRealYieldLatestItem]
+    count: int
+
+
+# ── US Treasury Yield Rate Schemas ──────────────────────────────────────────
+
+class UstYieldRateResponse(BaseModel):
+    """Single US Treasury yield rate record."""
+    id: UUID
+    date: date_type
+    tenor: str
+    rate: Optional[Decimal] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UstYieldPaginatedResponse(BaseModel):
+    """Paginated list of US Treasury yield rate records."""
+    data: List[UstYieldRateResponse]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class UstYieldLatestItem(BaseModel):
+    """Latest US Treasury yield rate for a single tenor."""
+    tenor: str
+    date: Optional[date_type] = None
+    rate: Optional[Decimal] = None
+
+
+class UstYieldLatestResponse(BaseModel):
+    """Latest US Treasury yield rates for all tenors."""
+    data: List[UstYieldLatestItem]
+    count: int
