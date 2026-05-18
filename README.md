@@ -1,12 +1,13 @@
 # OHLCV Data API
 
-High-performance REST API for OHLCV (Open, High, Low, Close, Volume) financial data with **batch queries**, **S&P 500 enriched endpoints**, and **ETF & Index data**. Query latest prices or full history for multiple companies, ETFs, or indices in a single request, with automatic ticker alias resolution and constituent verification.
+High-performance REST API for OHLCV (Open, High, Low, Close, Volume) financial data with **batch queries**, **S&P 500 enriched endpoints**, **ETF & Index data**, and **Government Bond data**. Query latest prices or full history for multiple companies, ETFs, indices, or government bonds in a single request, with automatic ticker alias resolution and constituent verification.
 
 ## Highlights
 
 - **Batch queries** — Request data for multiple companies in one API call using `tickers=AAPL,MSFT,GOOGL`
 - **S&P 500 enriched data** — OHLCV records enriched with company name, sector, industry, and index weight
 - **ETF & Index data** — Dedicated endpoints for ETFs (SPY, QQQ, IWM…) and indices (GSPC, DJI, IXIC…) with enriched metadata (name, exchange, ISIN, currency)
+- **Government Bond data** — Dedicated endpoints for government bonds (US10Y, UK10Y, DE10Y…) with enriched metadata (name, exchange, type, currency, country) and country filtering
 - **SQL query endpoint** — Execute read-only SQL queries directly against the database with built-in guardrails (read-only, timeout, row limit, allowed tables)
 - **Automatic alias resolution** — Mismatched tickers (e.g. `FISV` → `FI`) resolved transparently via the `ticker_aliases` table
 - **Constituent verification** — S&P 500 endpoints reject invalid tickers with clear error messages
@@ -70,6 +71,15 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/index/latest/?tickers=
 
 # Historical OHLCV for ETFs with date range
 curl "https://ohlcv-api-832081557693.europe-west2.run.app/etf/?tickers=SPY,QQQ&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
+
+# Latest OHLCV for specific government bonds — enriched with name, exchange, type, currency, country
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest/?tickers=US10Y,UK10Y,DE10Y&api_key=YOUR_KEY"
+
+# Latest OHLCV for all government bonds from specific countries
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest/?countries=US,DE,JP&api_key=YOUR_KEY"
+
+# Historical OHLCV for government bonds with date range
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/?tickers=US10Y,UK10Y&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
 ```
 
 ### Batch Endpoints Summary
@@ -91,6 +101,12 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/etf/?tickers=SPY,QQQ&s
 | `GET /index/latest/` | `tickers=GSPC,DJI,IXIC` | Latest index OHLCV | Yes |
 | `GET /index/latest/` | *(omit tickers)* | Latest for all indices | Yes |
 | `GET /index/latest/{ticker}` | — | Latest for a single index | Yes |
+| `GET /gov-bond/` | `tickers=US10Y,UK10Y,DE10Y` | Paginated gov bond history | No |
+| `GET /gov-bond/` | `countries=US,DE,JP` | Paginated gov bond history by country | No |
+| `GET /gov-bond/latest/` | `tickers=US10Y,UK10Y,DE10Y` | Latest gov bond OHLCV | Yes |
+| `GET /gov-bond/latest/` | `countries=US,DE,JP` | Latest gov bond OHLCV by country | Yes |
+| `GET /gov-bond/latest/` | *(omit tickers)* | Latest for all 117 gov bonds | Yes |
+| `GET /gov-bond/latest/{ticker}` | — | Latest for a single gov bond | Yes |
 
 ## S&P 500 Endpoints
 
@@ -208,7 +224,7 @@ Execute read-only SQL SELECT queries directly against the database. Four guardra
 1. **Read-only** — Only `SELECT` / `WITH` (CTE) statements permitted
 2. **Timeout** — Queries cancelled after 30s (configurable via `SQL_TIMEOUT_S`)
 3. **Row limit** — Max 5,000 rows returned (configurable via `SQL_MAX_ROWS`)
-4. **Allowed tables** — Only `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`, `ohlcv_data_etf_index`, `etf_index_assets`
+4. **Allowed tables** — Only `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`, `ohlcv_data_etf_index`, `etf_index_assets`, `ohlcv_data_gov_bonds`, `gov_bond_assets`
 
 ```bash
 curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=YOUR_KEY" \
@@ -270,6 +286,30 @@ See [DEVELOPER.md](./DEVELOPER.md) for full documentation including CTE examples
 | GET | `/index/` | List index OHLCV data with filters (supports batch `tickers`) |
 | GET | `/index/latest/` | Batch get latest index records (specific tickers or all) |
 | GET | `/index/latest/{ticker}` | Get latest record for a single index |
+
+### Government Bond Data
+
+Dedicated endpoints for government bonds (US10Y, UK10Y, DE10Y…) with enriched metadata (name, exchange, type, currency, country). Supports country filtering via `country` (single) and `countries` (comma-separated) parameters.
+
+```bash
+# Latest OHLCV for specific government bonds — enriched with name, exchange, type, currency, country
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest/?tickers=US10Y,UK10Y,DE10Y&api_key=YOUR_KEY"
+
+# Latest OHLCV for all government bonds from specific countries
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest/?countries=US,DE,JP&api_key=YOUR_KEY"
+
+# Historical OHLCV for government bonds with date range
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/?tickers=US10Y,UK10Y&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
+
+# Historical OHLCV for all bonds from a specific country
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/?countries=US&start_date=2025-01-01&api_key=YOUR_KEY"
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/gov-bond/` | List gov bond OHLCV data with filters (supports batch `tickers`, `country`/`countries`) |
+| GET | `/gov-bond/latest/` | Batch get latest gov bond records (specific tickers, countries, or all) |
+| GET | `/gov-bond/latest/{ticker}` | Get latest record for a single government bond |
 
 ### Ticker Aliases
 

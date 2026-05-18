@@ -871,6 +871,236 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/index/latest/?a
 
 ---
 
+## Government Bond Data
+
+Dedicated endpoints for government bonds (US10Y, UK10Y, DE10Y…) with enriched metadata (name, exchange, type, currency, country). Supports country filtering via `country` (single) and `countries` (comma-separated) parameters.
+
+### List Government Bond OHLCV Data
+
+Returns paginated OHLCV records for government bonds only. Only returns data for tickers that exist in `gov_bond_assets`. Supports filtering by ticker(s) and country/countries.
+
+**Endpoint:** `GET /gov-bond/`
+
+#### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `ticker` | string | - | Single government bond ticker (e.g., `US10Y`) |
+| `tickers` | string | - | Comma-separated government bond tickers (e.g., `US10Y,UK10Y,DE10Y`) |
+| `country` | string | - | Filter by single country code (e.g., `US`, `DE`, `JP`) |
+| `countries` | string | - | Comma-separated country codes (e.g., `US,DE,JP`) |
+| `start_date` | date | - | Start date filter (YYYY-MM-DD) |
+| `end_date` | date | - | End date filter (YYYY-MM-DD) |
+| `year` | integer | - | Filter by year (1900-2100) |
+| `month` | integer | - | Filter by month (1-12) |
+| `open_min` | decimal | - | Minimum open price |
+| `open_max` | decimal | - | Maximum open price |
+| `close_min` | decimal | - | Minimum close price |
+| `close_max` | decimal | - | Maximum close price |
+| `volume_min` | integer | - | Minimum volume |
+| `volume_max` | integer | - | Maximum volume |
+| `sort_by` | string | `date` | Sort field: `date`, `volume`, `close`, `open`, `high`, `low` |
+| `sort_order` | string | `desc` | Sort order: `asc`, `desc` |
+| `page` | integer | `1` | Page number (min: 1) |
+| `per_page` | integer | `1000` | Records per page (min: 1, max: 5000) |
+
+#### Example Request — Single Ticker
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/?api_key=YOUR_API_KEY&ticker=US10Y&start_date=2026-05-01&end_date=2026-05-07&sort_by=date&sort_order=desc&page=1&per_page=5"
+```
+
+#### Example Request — Filter by Country
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/?api_key=YOUR_API_KEY&countries=US,DE,JP&start_date=2026-05-01&end_date=2026-05-07&sort_by=date&sort_order=desc&page=1&per_page=5"
+```
+
+#### Example Response
+
+```json
+{
+  "data": [
+    {
+      "id": "a1b2c3d4-...",
+      "ticker": "US10Y",
+      "date": "2026-05-07",
+      "open": "4.2800",
+      "high": "4.3100",
+      "low": "4.2600",
+      "close": "4.2900",
+      "adjusted_close": "4.2900",
+      "volume": 0,
+      "created_at": "2026-05-08T02:00:00.000000",
+      "updated_at": "2026-05-08T02:00:00.000000"
+    }
+  ],
+  "total": 5,
+  "page": 1,
+  "per_page": 5,
+  "total_pages": 1,
+  "has_next": false,
+  "has_prev": false
+}
+```
+
+### Get Latest Government Bond Data
+
+#### Single Government Bond
+
+Returns the most recent OHLCV record for a single government bond, enriched with asset metadata.
+
+**Endpoint:** `GET /gov-bond/latest/{ticker}`
+
+##### Path Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `ticker` | string | Government bond ticker symbol (e.g., `US10Y`) |
+
+##### Example Request
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest/US10Y?api_key=YOUR_API_KEY"
+```
+
+##### Example Response
+
+```json
+{
+  "ticker": "US10Y",
+  "name": "United States 10-Year Bond",
+  "exchange": "GBOND",
+  "type": "government_bond",
+  "currency": "USD",
+  "country": "US",
+  "date": "2026-05-13",
+  "open": "4.2800",
+  "high": "4.3100",
+  "low": "4.2600",
+  "close": "4.2900",
+  "adjusted_close": "4.2900",
+  "volume": 0
+}
+```
+
+##### Error Response — Ticker Not Found
+
+```json
+{
+  "detail": "No government bond found with ticker: INVALID"
+}
+```
+
+#### Batch / All Government Bonds
+
+Returns the most recent OHLCV record for one or more government bonds. If no tickers are specified, returns the latest record for **all** government bonds. Uses LATERAL joins for efficient per-ticker latest-row lookups.
+
+**Endpoint:** `GET /gov-bond/latest/`
+
+> **Note:** This endpoint must be called with the trailing slash. Without it, FastAPI will route the request to `GET /gov-bond/latest/{ticker}`.
+
+> **URL Pattern — Batch vs Single Ticker:**
+>
+> ✅ **Batch (specific tickers):** `GET /gov-bond/latest/?tickers=US10Y,UK10Y,DE10Y`
+>
+> ✅ **Filter by country:** `GET /gov-bond/latest/?countries=US,DE,JP`
+>
+> ✅ **All government bonds:** `GET /gov-bond/latest/`
+>
+> ✅ **Single ticker (path param):** `GET /gov-bond/latest/US10Y`
+>
+> ❌ **Wrong:** `GET /gov-bond/latest/US10Y,UK10Y` — commas not allowed in path params
+
+##### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `tickers` | string | - | Comma-separated government bond tickers (e.g., `US10Y,UK10Y,DE10Y`). If omitted, returns latest for all 117 government bonds. |
+| `country` | string | - | Filter by single country code (e.g., `US`, `DE`, `JP`) |
+| `countries` | string | - | Comma-separated country codes (e.g., `US,DE,JP`) |
+
+##### Example Request — Specific Government Bonds
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest/?api_key=YOUR_API_KEY&tickers=US10Y,UK10Y,DE10Y"
+```
+
+##### Example Response
+
+```json
+{
+  "data": [
+    {
+      "ticker": "DE10Y",
+      "name": "Germany 10-Year Bond",
+      "exchange": "GBOND",
+      "type": "government_bond",
+      "currency": "EUR",
+      "country": "DE",
+      "date": "2026-05-13",
+      "open": "2.5800",
+      "high": "2.6000",
+      "low": "2.5700",
+      "close": "2.5900",
+      "adjusted_close": "2.5900",
+      "volume": 0
+    },
+    {
+      "ticker": "UK10Y",
+      "name": "United Kingdom 10-Year Bond",
+      "exchange": "GBOND",
+      "type": "government_bond",
+      "currency": "GBP",
+      "country": "UK",
+      "date": "2026-05-13",
+      "open": "4.4500",
+      "high": "4.4800",
+      "low": "4.4300",
+      "close": "4.4600",
+      "adjusted_close": "4.4600",
+      "volume": 0
+    },
+    {
+      "ticker": "US10Y",
+      "name": "United States 10-Year Bond",
+      "exchange": "GBOND",
+      "type": "government_bond",
+      "currency": "USD",
+      "country": "US",
+      "date": "2026-05-13",
+      "open": "4.2800",
+      "high": "4.3100",
+      "low": "4.2600",
+      "close": "4.2900",
+      "adjusted_close": "4.2900",
+      "volume": 0
+    }
+  ],
+  "count": 3
+}
+```
+
+##### Example Request — Filter by Country
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest/?api_key=YOUR_API_KEY&countries=US,DE,JP"
+```
+
+Returns the latest record for all government bonds from the specified countries.
+
+##### Example Request — All Government Bonds
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest/?api_key=YOUR_API_KEY"
+```
+
+> **Warning:** Omitting the `tickers` parameter returns the latest record for every government bond in the database (117 records across 28 countries).
+
+---
+
 ## SQL Query Endpoint
 
 Execute read-only SQL SELECT queries directly against the database. This endpoint is designed for ad-hoc data exploration and analysis that isn't covered by the existing REST endpoints.
@@ -886,7 +1116,7 @@ The SQL endpoint enforces four guardrails to protect data integrity and performa
 | 1 | **Read-only** | Only `SELECT` and `WITH` (CTE) statements are permitted. DML (`INSERT`, `UPDATE`, `DELETE`) and DDL (`CREATE`, `DROP`, `ALTER`) are blocked. |
 | 2 | **Timeout** | Queries are cancelled after 30 seconds (configurable via `SQL_TIMEOUT_S` env var). Returns `408 Request Timeout` if exceeded. |
 | 3 | **Row limit** | At most 5,000 rows are returned (configurable via `SQL_MAX_ROWS` env var). If the query produces more rows, the response is truncated and `truncated` is set to `true`. |
-| 4 | **Allowed tables** | Only the following tables may be referenced: `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`, `ohlcv_data_etf_index`, `etf_index_assets`. |
+| 4 | **Allowed tables** | Only the following tables may be referenced: `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`, `ohlcv_data_etf_index`, `etf_index_assets`, `ohlcv_data_gov_bonds`, `gov_bond_assets`. |
 
 ### Allowed Tables
 
@@ -899,6 +1129,8 @@ The SQL endpoint enforces four guardrails to protect data integrity and performa
 | `tickers` | Unique ticker lookup table | `ticker` |
 | `ohlcv_data_etf_index` | OHLCV price data for ETFs and indices (7.3M+ rows) | `ticker`, `date`, `open`, `high`, `low`, `close`, `adjusted_close`, `volume` |
 | `etf_index_assets` | ETF and index metadata (5,562 ETFs + 1,666 indices) | `code`, `name`, `exchange`, `type`, `isin`, `currency` |
+| `ohlcv_data_gov_bonds` | OHLCV price data for government bonds (678K+ rows) | `ticker`, `date`, `open`, `high`, `low`, `close`, `adjusted_close`, `volume` |
+| `gov_bond_assets` | Government bond metadata (117 bonds, 28 countries) | `code`, `name`, `exchange`, `type`, `currency`, `country` |
 
 ### Request Body
 
@@ -1227,6 +1459,71 @@ Used by: `GET /etf/latest/`, `GET /index/latest/`
 | `data` | list[EtfIndexLatestItem] | Yes | Array of ETFs/indices with latest OHLCV data |
 | `count` | integer | Yes | Number of records returned |
 
+### GovBondOhlcvResponse
+
+Used by: nested inside `GovBondPaginatedResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | UUID | Yes | Unique record identifier |
+| `ticker` | string | Yes | Ticker symbol (e.g., `US10Y`, `UK10Y`) |
+| `date` | date | Yes | Trading date (YYYY-MM-DD) |
+| `open` | decimal | No | Opening price |
+| `high` | decimal | No | Highest price |
+| `low` | decimal | No | Lowest price |
+| `close` | decimal | No | Closing price |
+| `adjusted_close` | decimal | No | Adjusted closing price (corporate actions) |
+| `volume` | integer | No | Trading volume |
+| `created_at` | datetime | No | Record creation timestamp |
+| `updated_at` | datetime | No | Record last-update timestamp |
+
+> **Note:** Unlike `OhlcvDataResponse`, this schema does **not** include `asset_isin` because the `ohlcv_data_gov_bonds` table lacks that column.
+
+### GovBondPaginatedResponse
+
+Used by: `GET /gov-bond/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[GovBondOhlcvResponse] | Yes | Array of government bond OHLCV records for the current page |
+| `total` | integer | Yes | Total number of matching records across all pages |
+| `page` | integer | Yes | Current page number |
+| `per_page` | integer | Yes | Number of records per page |
+| `total_pages` | integer | Yes | Total number of pages |
+| `has_next` | boolean | Yes | Whether a next page exists |
+| `has_prev` | boolean | Yes | Whether a previous page exists |
+
+### GovBondLatestItem
+
+Used by: `GET /gov-bond/latest/{ticker}`, nested inside `GovBondLatestResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `ticker` | string | Yes | Ticker symbol |
+| `name` | string | No | Government bond name (e.g., `United States 10-Year Bond`) |
+| `exchange` | string | No | Exchange (always `GBOND` for government bonds) |
+| `type` | string | No | Asset type (always `government_bond`) |
+| `currency` | string | No | Trading currency (e.g., `USD`, `EUR`, `GBP`) |
+| `country` | string | No | Country code (e.g., `US`, `DE`, `JP`) |
+| `date` | date | No | Trading date |
+| `open` | decimal | No | Opening price |
+| `high` | decimal | No | Highest price |
+| `low` | decimal | No | Lowest price |
+| `close` | decimal | No | Closing price |
+| `adjusted_close` | decimal | No | Adjusted closing price |
+| `volume` | integer | No | Trading volume |
+
+> **Note:** Unlike `EtfIndexLatestItem`, this schema uses `country` instead of `isin` because government bonds are identified by country rather than ISIN.
+
+### GovBondLatestResponse
+
+Used by: `GET /gov-bond/latest/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[GovBondLatestItem] | Yes | Array of government bonds with latest OHLCV data |
+| `count` | integer | Yes | Number of records returned |
+
 ---
 
 ## Batch Query Patterns
@@ -1243,6 +1540,8 @@ Used by: `GET /etf/latest/`, `GET /index/latest/`
 | Historical data for ETFs | `GET /etf/` | Filtered to ETFs only via `etf_index_assets` |
 | Latest prices for indices with metadata | `GET /index/latest/` | Enriched with name, exchange, isin, currency |
 | Historical data for indices | `GET /index/` | Filtered to indices only via `etf_index_assets` |
+| Latest prices for government bonds with metadata | `GET /gov-bond/latest/` | Enriched with name, exchange, type, currency, country |
+| Historical data for government bonds | `GET /gov-bond/` | Filtered to gov bonds only via `gov_bond_assets`; supports country filtering |
 
 ### S&P 500 vs Plain OHLCV
 
@@ -1268,3 +1567,9 @@ The S&P 500 endpoints add two features the plain OHLCV endpoints don't provide:
 | `GET /index/latest/` | `tickers=GSPC,DJI,IXIC` | Latest index OHLCV | Yes |
 | `GET /index/latest/` | *(omit tickers)* | Latest for all ~1,600 indices | Yes |
 | `GET /index/` | `tickers=GSPC,DJI,IXIC` | Paginated index history | No |
+| `GET /gov-bond/` | `tickers=US10Y,UK10Y,DE10Y` | Paginated gov bond history | No |
+| `GET /gov-bond/` | `countries=US,DE,JP` | Paginated gov bond history by country | No |
+| `GET /gov-bond/latest/` | `tickers=US10Y,UK10Y,DE10Y` | Latest gov bond OHLCV | Yes |
+| `GET /gov-bond/latest/` | `countries=US,DE,JP` | Latest gov bond OHLCV by country | Yes |
+| `GET /gov-bond/latest/` | *(omit tickers)* | Latest for all 117 gov bonds | Yes |
+| `GET /gov-bond/latest/{ticker}` | — | Latest for a single gov bond | Yes |

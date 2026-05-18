@@ -19,6 +19,7 @@ from database import get_db, engine as async_engine
 from models import (
     OhlcvData, SP500Constituent, Asset, TickerAlias, Ticker,
     EtfIndexOhlcvData, EtfIndexAsset,
+    GovBondOhlcvData, GovBondAsset,
 )
 from schemas import (
     OhlcvDataCreate, OhlcvDataUpdate, OhlcvDataResponse,
@@ -31,6 +32,8 @@ from schemas import (
     SqlQueryRequest, SqlQueryResponse,
     EtfIndexOhlcvResponse, EtfIndexPaginatedResponse,
     EtfIndexAssetResponse, EtfIndexLatestItem, EtfIndexLatestResponse,
+    GovBondOhlcvResponse, GovBondPaginatedResponse,
+    GovBondLatestItem, GovBondLatestResponse,
 )
 
 API_KEY = os.getenv("API_KEY", "ohlcv-api-key-2024-secure")
@@ -1417,6 +1420,265 @@ async def get_index_latest_single(
     )
 
 
+# ── Government Bond Endpoints ────────────────────────────────────────────────
+
+@app.get("/gov-bond/", response_model=GovBondPaginatedResponse)
+async def get_gov_bond_ohlcv_data(
+    ticker: Optional[str] = Query(None, description="Single government bond ticker (e.g., UK10Y)"),
+    tickers: Optional[str] = Query(None, description="Comma-separated government bond tickers (e.g., UK10Y,US10Y,DE10Y)"),
+    country: Optional[str] = Query(None, description="Filter by single country code (e.g., US, DE, JP)"),
+    countries: Optional[str] = Query(None, description="Comma-separated country codes (e.g., US,DE,JP)"),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    year: Optional[int] = Query(None, ge=1900, le=2100),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    open_min: Optional[Decimal] = Query(None),
+    open_max: Optional[Decimal] = Query(None),
+    close_min: Optional[Decimal] = Query(None),
+    close_max: Optional[Decimal] = Query(None),
+    volume_min: Optional[int] = Query(None),
+    volume_max: Optional[int] = Query(None),
+    sort_by: Optional[str] = Query("date", pattern="^(date|volume|close|open|high|low)$"),
+    sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(1000, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    List paginated OHLCV data for government bonds.
+    Only returns data for tickers that exist in gov_bond_assets.
+    Supports filtering by ticker(s) and country/countries.
+    """
+    ticker_list = parse_comma_separated(tickers) or ([ticker.upper()] if ticker else None)
+    country_list = parse_comma_separated(countries) or ([country.upper()] if country else None)
+
+    # Build WHERE clauses
+    conditions = []
+    count_conditions = []
+
+    if ticker_list:
+        if len(ticker_list) == 1:
+            conditions.append(GovBondOhlcvData.ticker == ticker_list[0])
+            count_conditions.append(GovBondOhlcvData.ticker == ticker_list[0])
+        else:
+            conditions.append(GovBondOhlcvData.ticker.in_(ticker_list))
+            count_conditions.append(GovBondOhlcvData.ticker.in_(ticker_list))
+
+    if country_list:
+        if len(country_list) == 1:
+            conditions.append(GovBondAsset.country == country_list[0])
+            count_conditions.append(GovBondAsset.country == country_list[0])
+        else:
+            conditions.append(GovBondAsset.country.in_(country_list))
+            count_conditions.append(GovBondAsset.country.in_(country_list))
+
+    if start_date:
+        conditions.append(GovBondOhlcvData.date >= start_date)
+        count_conditions.append(GovBondOhlcvData.date >= start_date)
+    if end_date:
+        conditions.append(GovBondOhlcvData.date <= end_date)
+        count_conditions.append(GovBondOhlcvData.date <= end_date)
+    if year:
+        conditions.append(func.extract("year", GovBondOhlcvData.date) == year)
+        count_conditions.append(func.extract("year", GovBondOhlcvData.date) == year)
+    if month:
+        conditions.append(func.extract("month", GovBondOhlcvData.date) == month)
+        count_conditions.append(func.extract("month", GovBondOhlcvData.date) == month)
+    if open_min is not None:
+        conditions.append(GovBondOhlcvData.open >= open_min)
+        count_conditions.append(GovBondOhlcvData.open >= open_min)
+    if open_max is not None:
+        conditions.append(GovBondOhlcvData.open <= open_max)
+        count_conditions.append(GovBondOhlcvData.open <= open_max)
+    if close_min is not None:
+        conditions.append(GovBondOhlcvData.close >= close_min)
+        count_conditions.append(GovBondOhlcvData.close >= close_min)
+    if close_max is not None:
+        conditions.append(GovBondOhlcvData.close <= close_max)
+        count_conditions.append(GovBondOhlcvData.close <= close_max)
+    if volume_min is not None:
+        conditions.append(GovBondOhlcvData.volume >= volume_min)
+        count_conditions.append(GovBondOhlcvData.volume >= volume_min)
+    if volume_max is not None:
+        conditions.append(GovBondOhlcvData.volume <= volume_max)
+        count_conditions.append(GovBondOhlcvData.volume <= volume_max)
+
+    # Count query — only count OHLCV rows that have a matching asset
+    count_query = select(func.count(GovBondOhlcvData.id)).join(
+        GovBondAsset, GovBondOhlcvData.ticker == GovBondAsset.code
+    )
+    for c in count_conditions:
+        count_query = count_query.where(c)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # Data query
+    sort_column = getattr(GovBondOhlcvData, sort_by or "date")
+    offset = (page - 1) * per_page
+
+    data_query = select(GovBondOhlcvData).join(
+        GovBondAsset, GovBondOhlcvData.ticker == GovBondAsset.code
+    )
+    for c in conditions:
+        data_query = data_query.where(c)
+    data_query = data_query.order_by(
+        sort_column.desc() if sort_order == "desc" else sort_column.asc()
+    ).offset(offset).limit(per_page)
+
+    result = await db.execute(data_query)
+    data = result.scalars().all()
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+
+    return GovBondPaginatedResponse(
+        data=data,  # type: ignore[arg-type]
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+
+@app.get("/gov-bond/latest/", response_model=GovBondLatestResponse)
+async def get_gov_bond_latest_batch(
+    tickers: Optional[str] = Query(None, description="Comma-separated government bond tickers (e.g., UK10Y,US10Y,DE10Y). If omitted, returns latest for all government bonds."),
+    country: Optional[str] = Query(None, description="Filter by single country code (e.g., US, DE, JP)"),
+    countries: Optional[str] = Query(None, description="Comma-separated country codes (e.g., US,DE,JP)"),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest OHLCV record for government bonds.
+    Uses LATERAL join driven by gov_bond_assets for efficient per-ticker
+    latest-row lookups. Enriched with name, exchange, type, currency, country.
+    Optionally filter by specific tickers and/or country/countries.
+    """
+    ticker_list = parse_comma_separated(tickers)
+    country_list = parse_comma_separated(countries) or ([country.upper()] if country else None)
+
+    # Build country filter SQL fragment
+    country_where = ""
+    if country_list:
+        country_values = ", ".join(f"'{c}'" for c in country_list)
+        country_where = f"AND a.country IN ({country_values})"
+
+    if ticker_list:
+        # Specific tickers: VALUES list as driving row source
+        ticker_values = ", ".join(f"('{t}')" for t in ticker_list)
+        query = text(f"""
+            SELECT t.ticker, a.name, a.exchange, a.type, a.currency, a.country,
+                   o.id, o.date, o.open, o.high, o.low, o.close,
+                   o.adjusted_close, o.volume
+            FROM (VALUES {ticker_values}) AS t(ticker)
+            JOIN gov_bond_assets a ON a.code = t.ticker
+            CROSS JOIN LATERAL (
+                SELECT id, date, open, high, low, close, adjusted_close, volume
+                FROM ohlcv_data_gov_bonds
+                WHERE ticker = t.ticker
+                ORDER BY date DESC
+                LIMIT 1
+            ) o
+            WHERE 1=1 {country_where}
+            ORDER BY t.ticker ASC
+        """)
+    else:
+        # All government bonds: gov_bond_assets as driving row source
+        query = text(f"""
+            SELECT a.code AS ticker, a.name, a.exchange, a.type, a.currency, a.country,
+                   o.id, o.date, o.open, o.high, o.low, o.close,
+                   o.adjusted_close, o.volume
+            FROM gov_bond_assets a
+            CROSS JOIN LATERAL (
+                SELECT id, date, open, high, low, close, adjusted_close, volume
+                FROM ohlcv_data_gov_bonds
+                WHERE ticker = a.code
+                ORDER BY date DESC
+                LIMIT 1
+            ) o
+            WHERE 1=1 {country_where}
+            ORDER BY a.code ASC
+        """)
+
+    result = await db.execute(query)
+    rows = result.fetchall()
+
+    items = [
+        GovBondLatestItem(
+            ticker=row.ticker,
+            name=row.name,
+            exchange=row.exchange,
+            type=row.type,
+            currency=row.currency,
+            country=row.country,
+            date=row.date,
+            open=row.open,
+            high=row.high,
+            low=row.low,
+            close=row.close,
+            adjusted_close=row.adjusted_close,
+            volume=row.volume,
+        )
+        for row in rows
+    ]
+
+    return GovBondLatestResponse(data=items, count=len(items))
+
+
+@app.get("/gov-bond/latest/{ticker}", response_model=GovBondLatestItem)
+async def get_gov_bond_latest_single(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest OHLCV record for a single government bond,
+    enriched with asset metadata (name, exchange, type, currency, country).
+    """
+    ticker = ticker.upper()
+
+    # Verify the ticker is a government bond
+    asset_query = select(GovBondAsset).where(GovBondAsset.code == ticker)
+    asset_result = await db.execute(asset_query)
+    asset = asset_result.scalar_one_or_none()
+
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"No government bond found with ticker: {ticker}")
+
+    # Get latest OHLCV
+    ohlcv_query = select(GovBondOhlcvData).where(
+        GovBondOhlcvData.ticker == ticker
+    ).order_by(GovBondOhlcvData.date.desc()).limit(1)
+    ohlcv_result = await db.execute(ohlcv_query)
+    ohlcv = ohlcv_result.scalar_one_or_none()
+
+    if not ohlcv:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No OHLCV data found for government bond ticker: {ticker}. "
+                   f"The asset exists in gov_bond_assets but has no price data in ohlcv_data_gov_bonds."
+        )
+
+    return GovBondLatestItem(
+        ticker=ticker,
+        name=asset.name,          # type: ignore[arg-type]
+        exchange=asset.exchange,  # type: ignore[arg-type]
+        type=asset.type,          # type: ignore[arg-type]
+        currency=asset.currency,  # type: ignore[arg-type]
+        country=asset.country,    # type: ignore[arg-type]
+        date=ohlcv.date,          # type: ignore[arg-type]
+        open=ohlcv.open,          # type: ignore[arg-type]
+        high=ohlcv.high,          # type: ignore[arg-type]
+        low=ohlcv.low,            # type: ignore[arg-type]
+        close=ohlcv.close,        # type: ignore[arg-type]
+        adjusted_close=ohlcv.adjusted_close,  # type: ignore[arg-type]
+        volume=ohlcv.volume,      # type: ignore[arg-type]
+    )
+
+
 # ── SQL Query Endpoint ───────────────────────────────────────────────────────
 
 # Guardrail 1: Only SELECT statements are allowed
@@ -1440,6 +1702,7 @@ _FORBIDDEN_KEYWORDS = {
 ALLOWED_TABLES = {
     "ohlcv_data", "assets", "sp500_constituents", "ticker_aliases", "tickers",
     "ohlcv_data_etf_index", "etf_index_assets",
+    "ohlcv_data_gov_bonds", "gov_bond_assets",
 }
 
 # Guardrail 3: Maximum rows returned
@@ -1538,7 +1801,7 @@ async def execute_sql(
          `truncated` is set to `true`.
        4. **Allowed tables** — Only the following tables may be referenced:
           `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`,
-          `ohlcv_data_etf_index`, `etf_index_assets`.
+          `ohlcv_data_etf_index`, `etf_index_assets`, `ohlcv_data_gov_bonds`, `gov_bond_assets`.
     """
     # Guardrails 1, 2 (table whitelist), 3 (forbidden keywords)
     _validate_sql(body.query)

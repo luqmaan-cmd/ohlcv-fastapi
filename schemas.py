@@ -270,3 +270,57 @@ class EtfIndexLatestResponse(BaseModel):
     """Latest OHLCV for ETFs or Indices."""
     data: List[EtfIndexLatestItem]
     count: int
+
+
+# ── Government Bond Schemas ──────────────────────────────────────────────────
+
+class GovBondOhlcvResponse(BaseModel):
+    """Single OHLCV record from ohlcv_data_gov_bonds (no asset_isin column)."""
+    id: UUID
+    ticker: str
+    date: date_type
+    open: Optional[Decimal] = None
+    high: Optional[Decimal] = None
+    low: Optional[Decimal] = None
+    close: Optional[Decimal] = None
+    adjusted_close: Optional[Decimal] = None
+    volume: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class GovBondPaginatedResponse(BaseModel):
+    """Paginated list of government bond OHLCV records."""
+    data: List[GovBondOhlcvResponse]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class GovBondLatestItem(BaseModel):
+    """Single government bond with latest OHLCV data, enriched with asset metadata."""
+    ticker: str
+    name: Optional[str] = None
+    exchange: Optional[str] = None
+    type: Optional[str] = None
+    currency: Optional[str] = None
+    country: Optional[str] = None
+    date: Optional[date_type] = None
+    open: Optional[Decimal] = None
+    high: Optional[Decimal] = None
+    low: Optional[Decimal] = None
+    close: Optional[Decimal] = None
+    adjusted_close: Optional[Decimal] = None
+    volume: Optional[int] = None
+
+
+class GovBondLatestResponse(BaseModel):
+    """Latest OHLCV for government bonds."""
+    data: List[GovBondLatestItem]
+    count: int
