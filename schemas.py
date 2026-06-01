@@ -492,3 +492,58 @@ class UstYieldLatestResponse(BaseModel):
     """Latest US Treasury yield rates for all tenors."""
     data: List[UstYieldLatestItem]
     count: int
+
+
+# ── Foreign Exchange (FX) Schemas ─────────────────────────────────────────────
+
+class FxOhlcvResponse(BaseModel):
+    """Single OHLCV record from ohlcv_data_fx (no asset_isin column)."""
+    id: UUID
+    ticker: str
+    date: date_type
+    open: Optional[Decimal] = None
+    high: Optional[Decimal] = None
+    low: Optional[Decimal] = None
+    close: Optional[Decimal] = None
+    adjusted_close: Optional[Decimal] = None
+    volume: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class FxPaginatedResponse(BaseModel):
+    """Paginated list of FX OHLCV records."""
+    data: List[FxOhlcvResponse]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class FxLatestItem(BaseModel):
+    """Single FX pair with latest OHLCV data, enriched with asset metadata."""
+    ticker: str
+    name: Optional[str] = None
+    exchange: Optional[str] = None
+    type: Optional[str] = None
+    currency: Optional[str] = None
+    base_currency: Optional[str] = None
+    quote_currency: Optional[str] = None
+    date: Optional[date_type] = None
+    open: Optional[Decimal] = None
+    high: Optional[Decimal] = None
+    low: Optional[Decimal] = None
+    close: Optional[Decimal] = None
+    adjusted_close: Optional[Decimal] = None
+    volume: Optional[int] = None
+
+
+class FxLatestResponse(BaseModel):
+    """Latest OHLCV for FX pairs."""
+    data: List[FxLatestItem]
+    count: int

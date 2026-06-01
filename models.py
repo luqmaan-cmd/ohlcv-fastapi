@@ -165,3 +165,33 @@ class UstYieldRate(Base):
     rate = Column(Numeric(18, 6))
     created_at = Column(DateTime)
     updated_at = Column(DateTime)
+
+
+class FxOhlcvData(Base):
+    __tablename__ = "ohlcv_data_fx"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ticker = Column(String(20), ForeignKey("fx_assets.code", ondelete="CASCADE"), nullable=False)
+    date = Column(Date, nullable=False)
+    open = Column(Numeric(18, 4))
+    high = Column(Numeric(18, 4))
+    low = Column(Numeric(18, 4))
+    close = Column(Numeric(18, 4))
+    adjusted_close = Column(Numeric(18, 4))
+    volume = Column(BigInteger)
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)
+
+
+class FxAsset(Base):
+    __tablename__ = "fx_assets"
+
+    code = Column(String(20), primary_key=True)
+    name = Column(String)
+    exchange = Column(String, nullable=False)
+    base_currency = Column(String(3))
+    quote_currency = Column(String(3))
+    type = Column(String)
+    currency = Column(String)
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)

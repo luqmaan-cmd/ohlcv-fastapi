@@ -20,6 +20,7 @@ from models import (
     OhlcvData, SP500Constituent, Asset, TickerAlias, Ticker,
     EtfIndexOhlcvData, EtfIndexAsset,
     GovBondOhlcvData, GovBondAsset,
+    FxOhlcvData, FxAsset,
     UstBillRate, UstLongTermRate, UstRealYieldRate, UstYieldRate,
 )
 from schemas import (
@@ -35,6 +36,8 @@ from schemas import (
     EtfIndexAssetResponse, EtfIndexLatestItem, EtfIndexLatestResponse,
     GovBondOhlcvResponse, GovBondPaginatedResponse,
     GovBondLatestItem, GovBondLatestResponse,
+    FxOhlcvResponse, FxPaginatedResponse,
+    FxLatestItem, FxLatestResponse,
     UstBillRateResponse, UstBillPaginatedResponse,
     UstBillLatestItem, UstBillLatestResponse,
     UstLongTermRateResponse, UstLongTermPaginatedResponse,
@@ -1695,6 +1698,271 @@ async def get_gov_bond_latest_single(
     )
 
 
+# ── Foreign Exchange (FX) Endpoints ──────────────────────────────────────────
+
+@app.get("/fx/", response_model=FxPaginatedResponse)
+async def get_fx_ohlcv_data(
+    ticker: Optional[str] = Query(None, description="Single FX ticker (e.g., EURUSD)"),
+    tickers: Optional[str] = Query(None, description="Comma-separated FX tickers (e.g., EURUSD,GBPUSD,USDJPY)"),
+    base_currency: Optional[str] = Query(None, description="Filter by base currency code (e.g., EUR, GBP)"),
+    quote_currency: Optional[str] = Query(None, description="Filter by quote currency code (e.g., USD, JPY)"),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    year: Optional[int] = Query(None, ge=1900, le=2100),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    open_min: Optional[Decimal] = Query(None),
+    open_max: Optional[Decimal] = Query(None),
+    close_min: Optional[Decimal] = Query(None),
+    close_max: Optional[Decimal] = Query(None),
+    volume_min: Optional[int] = Query(None),
+    volume_max: Optional[int] = Query(None),
+    sort_by: Optional[str] = Query("date", pattern="^(date|volume|close|open|high|low)$"),
+    sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(1000, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    List paginated OHLCV data for foreign exchange pairs.
+    Only returns data for tickers that exist in fx_assets.
+    Supports filtering by ticker(s), base_currency, and quote_currency.
+    """
+    ticker_list = parse_comma_separated(tickers) or ([ticker.upper()] if ticker else None)
+
+    # Build WHERE clauses
+    conditions = []
+    count_conditions = []
+
+    if ticker_list:
+        if len(ticker_list) == 1:
+            conditions.append(FxOhlcvData.ticker == ticker_list[0])
+            count_conditions.append(FxOhlcvData.ticker == ticker_list[0])
+        else:
+            conditions.append(FxOhlcvData.ticker.in_(ticker_list))
+            count_conditions.append(FxOhlcvData.ticker.in_(ticker_list))
+
+    if base_currency:
+        conditions.append(FxAsset.base_currency == base_currency.upper())
+        count_conditions.append(FxAsset.base_currency == base_currency.upper())
+
+    if quote_currency:
+        conditions.append(FxAsset.quote_currency == quote_currency.upper())
+        count_conditions.append(FxAsset.quote_currency == quote_currency.upper())
+
+    if start_date:
+        conditions.append(FxOhlcvData.date >= start_date)
+        count_conditions.append(FxOhlcvData.date >= start_date)
+    if end_date:
+        conditions.append(FxOhlcvData.date <= end_date)
+        count_conditions.append(FxOhlcvData.date <= end_date)
+    if year:
+        conditions.append(func.extract("year", FxOhlcvData.date) == year)
+        count_conditions.append(func.extract("year", FxOhlcvData.date) == year)
+    if month:
+        conditions.append(func.extract("month", FxOhlcvData.date) == month)
+        count_conditions.append(func.extract("month", FxOhlcvData.date) == month)
+    if open_min is not None:
+        conditions.append(FxOhlcvData.open >= open_min)
+        count_conditions.append(FxOhlcvData.open >= open_min)
+    if open_max is not None:
+        conditions.append(FxOhlcvData.open <= open_max)
+        count_conditions.append(FxOhlcvData.open <= open_max)
+    if close_min is not None:
+        conditions.append(FxOhlcvData.close >= close_min)
+        count_conditions.append(FxOhlcvData.close >= close_min)
+    if close_max is not None:
+        conditions.append(FxOhlcvData.close <= close_max)
+        count_conditions.append(FxOhlcvData.close <= close_max)
+    if volume_min is not None:
+        conditions.append(FxOhlcvData.volume >= volume_min)
+        count_conditions.append(FxOhlcvData.volume >= volume_min)
+    if volume_max is not None:
+        conditions.append(FxOhlcvData.volume <= volume_max)
+        count_conditions.append(FxOhlcvData.volume <= volume_max)
+
+    # Count query — only count OHLCV rows that have a matching asset
+    count_query = select(func.count(FxOhlcvData.id)).join(
+        FxAsset, FxOhlcvData.ticker == FxAsset.code
+    )
+    for c in count_conditions:
+        count_query = count_query.where(c)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # Data query
+    sort_column = getattr(FxOhlcvData, sort_by or "date")
+    offset = (page - 1) * per_page
+
+    data_query = select(FxOhlcvData).join(
+        FxAsset, FxOhlcvData.ticker == FxAsset.code
+    )
+    for c in conditions:
+        data_query = data_query.where(c)
+    data_query = data_query.order_by(
+        sort_column.desc() if sort_order == "desc" else sort_column.asc()
+    ).offset(offset).limit(per_page)
+
+    result = await db.execute(data_query)
+    data = result.scalars().all()
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+
+    return FxPaginatedResponse(
+        data=data,  # type: ignore[arg-type]
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+
+@app.get("/fx/latest/", response_model=FxLatestResponse)
+async def get_fx_latest_batch(
+    tickers: Optional[str] = Query(None, description="Comma-separated FX tickers (e.g., EURUSD,GBPUSD,USDJPY). If omitted, returns latest for all FX pairs."),
+    base_currency: Optional[str] = Query(None, description="Filter by base currency code (e.g., EUR, GBP)"),
+    quote_currency: Optional[str] = Query(None, description="Filter by quote currency code (e.g., USD, JPY)"),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest OHLCV record for foreign exchange pairs.
+    Uses LATERAL join driven by fx_assets for efficient per-ticker
+    latest-row lookups. Enriched with name, exchange, type, currency,
+    base_currency, quote_currency.
+    Optionally filter by specific tickers and/or base_currency/quote_currency.
+    """
+    ticker_list = parse_comma_separated(tickers)
+
+    # Build currency filter SQL fragments
+    base_where = ""
+    quote_where = ""
+    if base_currency:
+        base_where = f"AND a.base_currency = '{base_currency.upper()}'"
+    if quote_currency:
+        quote_where = f"AND a.quote_currency = '{quote_currency.upper()}'"
+
+    if ticker_list:
+        # Specific tickers: VALUES list as driving row source
+        ticker_values = ", ".join(f"('{t}')" for t in ticker_list)
+        query = text(f"""
+            SELECT t.ticker, a.name, a.exchange, a.type, a.currency,
+                   a.base_currency, a.quote_currency,
+                   o.id, o.date, o.open, o.high, o.low, o.close,
+                   o.adjusted_close, o.volume
+            FROM (VALUES {ticker_values}) AS t(ticker)
+            JOIN fx_assets a ON a.code = t.ticker
+            CROSS JOIN LATERAL (
+                SELECT id, date, open, high, low, close, adjusted_close, volume
+                FROM ohlcv_data_fx
+                WHERE ticker = t.ticker
+                ORDER BY date DESC
+                LIMIT 1
+            ) o
+            WHERE 1=1 {base_where} {quote_where}
+            ORDER BY t.ticker ASC
+        """)
+    else:
+        # All FX pairs: fx_assets as driving row source
+        query = text(f"""
+            SELECT a.code AS ticker, a.name, a.exchange, a.type, a.currency,
+                   a.base_currency, a.quote_currency,
+                   o.id, o.date, o.open, o.high, o.low, o.close,
+                   o.adjusted_close, o.volume
+            FROM fx_assets a
+            CROSS JOIN LATERAL (
+                SELECT id, date, open, high, low, close, adjusted_close, volume
+                FROM ohlcv_data_fx
+                WHERE ticker = a.code
+                ORDER BY date DESC
+                LIMIT 1
+            ) o
+            WHERE 1=1 {base_where} {quote_where}
+            ORDER BY a.code ASC
+        """)
+
+    result = await db.execute(query)
+    rows = result.fetchall()
+
+    items = [
+        FxLatestItem(
+            ticker=row.ticker,
+            name=row.name,
+            exchange=row.exchange,
+            type=row.type,
+            currency=row.currency,
+            base_currency=row.base_currency,
+            quote_currency=row.quote_currency,
+            date=row.date,
+            open=row.open,
+            high=row.high,
+            low=row.low,
+            close=row.close,
+            adjusted_close=row.adjusted_close,
+            volume=row.volume,
+        )
+        for row in rows
+    ]
+
+    return FxLatestResponse(data=items, count=len(items))
+
+
+@app.get("/fx/latest/{ticker}", response_model=FxLatestItem)
+async def get_fx_latest_single(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest OHLCV record for a single foreign exchange pair,
+    enriched with asset metadata (name, exchange, type, currency,
+    base_currency, quote_currency).
+    """
+    ticker = ticker.upper()
+
+    # Verify the ticker is an FX asset
+    asset_query = select(FxAsset).where(FxAsset.code == ticker)
+    asset_result = await db.execute(asset_query)
+    asset = asset_result.scalar_one_or_none()
+
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"No FX pair found with ticker: {ticker}")
+
+    # Get latest OHLCV
+    ohlcv_query = select(FxOhlcvData).where(
+        FxOhlcvData.ticker == ticker
+    ).order_by(FxOhlcvData.date.desc()).limit(1)
+    ohlcv_result = await db.execute(ohlcv_query)
+    ohlcv = ohlcv_result.scalar_one_or_none()
+
+    if not ohlcv:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No OHLCV data found for FX ticker: {ticker}. "
+                   f"The asset exists in fx_assets but has no price data in ohlcv_data_fx."
+        )
+
+    return FxLatestItem(
+        ticker=ticker,
+        name=asset.name,                    # type: ignore[arg-type]
+        exchange=asset.exchange,            # type: ignore[arg-type]
+        type=asset.type,                    # type: ignore[arg-type]
+        currency=asset.currency,            # type: ignore[arg-type]
+        base_currency=asset.base_currency,  # type: ignore[arg-type]
+        quote_currency=asset.quote_currency,  # type: ignore[arg-type]
+        date=ohlcv.date,                    # type: ignore[arg-type]
+        open=ohlcv.open,                    # type: ignore[arg-type]
+        high=ohlcv.high,                    # type: ignore[arg-type]
+        low=ohlcv.low,                      # type: ignore[arg-type]
+        close=ohlcv.close,                  # type: ignore[arg-type]
+        adjusted_close=ohlcv.adjusted_close,  # type: ignore[arg-type]
+        volume=ohlcv.volume,                # type: ignore[arg-type]
+    )
+
+
 # ── US Treasury Rate Endpoints ───────────────────────────────────────────────
 
 # --- UST Bill Rates ---
@@ -2311,6 +2579,7 @@ ALLOWED_TABLES = {
     "ohlcv_data", "assets", "sp500_constituents", "ticker_aliases", "tickers",
     "ohlcv_data_etf_index", "etf_index_assets",
     "ohlcv_data_gov_bonds", "gov_bond_assets",
+    "ohlcv_data_fx", "fx_assets",
     "ust_bill_rates", "ust_long_term_rates", "ust_real_yield_rates", "ust_yield_rates",
 }
 

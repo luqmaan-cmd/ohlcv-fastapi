@@ -1101,6 +1101,248 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest
 
 ---
 
+## Foreign Exchange (FX) Data
+
+Dedicated endpoints for foreign exchange pairs (EURUSD, GBPUSD, USDJPY…) with enriched metadata (name, exchange, type, currency, base_currency, quote_currency). Supports filtering by `base_currency` and `quote_currency` parameters.
+
+### List FX OHLCV Data
+
+Returns paginated OHLCV records for foreign exchange pairs only. Only returns data for tickers that exist in `fx_assets`. Supports filtering by ticker(s), base_currency, and quote_currency.
+
+**Endpoint:** `GET /fx/`
+
+#### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `ticker` | string | - | Single FX ticker (e.g., `EURUSD`) |
+| `tickers` | string | - | Comma-separated FX tickers (e.g., `EURUSD,GBPUSD,USDJPY`) |
+| `base_currency` | string | - | Filter by base currency code (e.g., `EUR`, `GBP`) |
+| `quote_currency` | string | - | Filter by quote currency code (e.g., `USD`, `JPY`) |
+| `start_date` | date | - | Start date filter (YYYY-MM-DD) |
+| `end_date` | date | - | End date filter (YYYY-MM-DD) |
+| `year` | integer | - | Filter by year (1900-2100) |
+| `month` | integer | - | Filter by month (1-12) |
+| `open_min` | decimal | - | Minimum open price |
+| `open_max` | decimal | - | Maximum open price |
+| `close_min` | decimal | - | Minimum close price |
+| `close_max` | decimal | - | Maximum close price |
+| `volume_min` | integer | - | Minimum volume |
+| `volume_max` | integer | - | Maximum volume |
+| `sort_by` | string | `date` | Sort field: `date`, `volume`, `close`, `open`, `high`, `low` |
+| `sort_order` | string | `desc` | Sort order: `asc`, `desc` |
+| `page` | integer | `1` | Page number (min: 1) |
+| `per_page` | integer | `1000` | Records per page (min: 1, max: 5000) |
+
+#### Example Request — Single Ticker
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/fx/?api_key=YOUR_API_KEY&ticker=EURUSD&start_date=2026-05-01&end_date=2026-05-07&sort_by=date&sort_order=desc&page=1&per_page=5"
+```
+
+#### Example Request — Filter by Base Currency
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/fx/?api_key=YOUR_API_KEY&base_currency=EUR&start_date=2026-05-01&end_date=2026-05-07&sort_by=date&sort_order=desc&page=1&per_page=5"
+```
+
+#### Example Request — Filter by Quote Currency
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/fx/?api_key=YOUR_API_KEY&quote_currency=USD&start_date=2026-05-01&end_date=2026-05-07&sort_by=date&sort_order=desc&page=1&per_page=5"
+```
+
+#### Example Response
+
+```json
+{
+  "data": [
+    {
+      "id": "a1b2c3d4-...",
+      "ticker": "EURUSD",
+      "date": "2026-05-07",
+      "open": "1.1320",
+      "high": "1.1345",
+      "low": "1.1298",
+      "close": "1.1332",
+      "adjusted_close": "1.1332",
+      "volume": 0,
+      "created_at": "2026-05-08T02:00:00.000000",
+      "updated_at": "2026-05-08T02:00:00.000000"
+    }
+  ],
+  "total": 5,
+  "page": 1,
+  "per_page": 5,
+  "total_pages": 1,
+  "has_next": false,
+  "has_prev": false
+}
+```
+
+### Get Latest FX Data
+
+#### Single FX Pair
+
+Returns the most recent OHLCV record for a single foreign exchange pair, enriched with asset metadata.
+
+**Endpoint:** `GET /fx/latest/{ticker}`
+
+##### Path Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `ticker` | string | FX ticker symbol (e.g., `EURUSD`) |
+
+##### Example Request
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/fx/latest/EURUSD?api_key=YOUR_API_KEY"
+```
+
+##### Example Response
+
+```json
+{
+  "ticker": "EURUSD",
+  "name": "EUR/USD",
+  "exchange": "FX",
+  "type": "currency",
+  "currency": "USD",
+  "base_currency": "EUR",
+  "quote_currency": "USD",
+  "date": "2026-05-13",
+  "open": "1.1320",
+  "high": "1.1345",
+  "low": "1.1298",
+  "close": "1.1332",
+  "adjusted_close": "1.1332",
+  "volume": 0
+}
+```
+
+##### Error Response — Ticker Not Found
+
+```json
+{
+  "detail": "No FX pair found with ticker: INVALID"
+}
+```
+
+#### Batch / All FX Pairs
+
+Returns the most recent OHLCV record for one or more foreign exchange pairs. If no tickers are specified, returns the latest record for **all** FX pairs. Uses LATERAL joins for efficient per-ticker latest-row lookups.
+
+**Endpoint:** `GET /fx/latest/`
+
+> **Note:** This endpoint must be called with the trailing slash. Without it, FastAPI will route the request to `GET /fx/latest/{ticker}`.
+
+> **URL Pattern — Batch vs Single Ticker:**
+>
+> ✅ **Batch (specific tickers):** `GET /fx/latest/?tickers=EURUSD,GBPUSD,USDJPY`
+>
+> ✅ **Filter by base currency:** `GET /fx/latest/?base_currency=EUR`
+>
+> ✅ **Filter by quote currency:** `GET /fx/latest/?quote_currency=USD`
+>
+> ✅ **All FX pairs:** `GET /fx/latest/`
+>
+> ✅ **Single ticker (path param):** `GET /fx/latest/EURUSD`
+>
+> ❌ **Wrong:** `GET /fx/latest/EURUSD,GBPUSD` — commas not allowed in path params
+
+##### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `tickers` | string | - | Comma-separated FX tickers (e.g., `EURUSD,GBPUSD,USDJPY`). If omitted, returns latest for all ~948 FX pairs. |
+| `base_currency` | string | - | Filter by base currency code (e.g., `EUR`, `GBP`) |
+| `quote_currency` | string | - | Filter by quote currency code (e.g., `USD`, `JPY`) |
+
+##### Example Request — Specific FX Pairs
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/fx/latest/?api_key=YOUR_API_KEY&tickers=EURUSD,GBPUSD,USDJPY"
+```
+
+##### Example Response
+
+```json
+{
+  "data": [
+    {
+      "ticker": "EURUSD",
+      "name": "EUR/USD",
+      "exchange": "FX",
+      "type": "currency",
+      "currency": "USD",
+      "base_currency": "EUR",
+      "quote_currency": "USD",
+      "date": "2026-05-13",
+      "open": "1.1320",
+      "high": "1.1345",
+      "low": "1.1298",
+      "close": "1.1332",
+      "adjusted_close": "1.1332",
+      "volume": 0
+    },
+    {
+      "ticker": "GBPUSD",
+      "name": "GBP/USD",
+      "exchange": "FX",
+      "type": "currency",
+      "currency": "USD",
+      "base_currency": "GBP",
+      "quote_currency": "USD",
+      "date": "2026-05-13",
+      "open": "1.3210",
+      "high": "1.3245",
+      "low": "1.3198",
+      "close": "1.3232",
+      "adjusted_close": "1.3232",
+      "volume": 0
+    },
+    {
+      "ticker": "USDJPY",
+      "name": "USD/JPY",
+      "exchange": "FX",
+      "type": "currency",
+      "currency": "JPY",
+      "base_currency": "USD",
+      "quote_currency": "JPY",
+      "date": "2026-05-13",
+      "open": "145.2300",
+      "high": "145.6700",
+      "low": "144.8900",
+      "close": "145.4500",
+      "adjusted_close": "145.4500",
+      "volume": 0
+    }
+  ],
+  "count": 3
+}
+```
+
+##### Example Request — Filter by Base Currency
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/fx/latest/?api_key=YOUR_API_KEY&base_currency=EUR"
+```
+
+Returns the latest record for all FX pairs where the base currency is EUR.
+
+##### Example Request — All FX Pairs
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/fx/latest/?api_key=YOUR_API_KEY"
+```
+
+> **Warning:** Omitting the `tickers` parameter returns the latest record for every FX pair in the database (~948 records). The response can be several MB. Use with caution in bandwidth-constrained environments.
+
+---
+
 ## US Treasury Rate Data
 
 Dedicated endpoints for US Treasury rates across four categories: bill rates, yield curve rates, real yield rates, and long-term rates. Each category provides paginated history, batch latest, and single-tenor latest endpoints.
@@ -1768,7 +2010,7 @@ The SQL endpoint enforces four guardrails to protect data integrity and performa
 | 1 | **Read-only** | Only `SELECT` and `WITH` (CTE) statements are permitted. DML (`INSERT`, `UPDATE`, `DELETE`) and DDL (`CREATE`, `DROP`, `ALTER`) are blocked. |
 | 2 | **Timeout** | Queries are cancelled after 30 seconds (configurable via `SQL_TIMEOUT_S` env var). Returns `408 Request Timeout` if exceeded. |
 | 3 | **Row limit** | At most 5,000 rows are returned (configurable via `SQL_MAX_ROWS` env var). If the query produces more rows, the response is truncated and `truncated` is set to `true`. |
-| 4 | **Allowed tables** | Only the following tables may be referenced: `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`, `ohlcv_data_etf_index`, `etf_index_assets`, `ohlcv_data_gov_bonds`, `gov_bond_assets`, `ust_bill_rates`, `ust_long_term_rates`, `ust_real_yield_rates`, `ust_yield_rates`. |
+| 4 | **Allowed tables** | Only the following tables may be referenced: `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`, `ohlcv_data_etf_index`, `etf_index_assets`, `ohlcv_data_gov_bonds`, `gov_bond_assets`, `ohlcv_data_fx`, `fx_assets`, `ust_bill_rates`, `ust_long_term_rates`, `ust_real_yield_rates`, `ust_yield_rates`. |
 
 ### Allowed Tables
 
@@ -1783,6 +2025,8 @@ The SQL endpoint enforces four guardrails to protect data integrity and performa
 | `etf_index_assets` | ETF and index metadata (5,562 ETFs + 1,666 indices) | `code`, `name`, `exchange`, `type`, `isin`, `currency` |
 | `ohlcv_data_gov_bonds` | OHLCV price data for government bonds (678K+ rows) | `ticker`, `date`, `open`, `high`, `low`, `close`, `adjusted_close`, `volume` |
 | `gov_bond_assets` | Government bond metadata (117 bonds, 28 countries) | `code`, `name`, `exchange`, `type`, `currency`, `country` |
+| `ohlcv_data_fx` | OHLCV price data for foreign exchange pairs (6.3M+ rows) | `ticker`, `date`, `open`, `high`, `low`, `close`, `adjusted_close`, `volume` |
+| `fx_assets` | Foreign exchange pair metadata (948 pairs) | `code`, `name`, `exchange`, `type`, `currency`, `base_currency`, `quote_currency` |
 | `ust_bill_rates` | US Treasury bill rates (658 rows) | `date`, `tenor`, `discount`, `coupon`, `avg_discount`, `avg_coupon`, `maturity_date`, `cusip` |
 | `ust_long_term_rates` | US Treasury long-term rates (282 rows) | `date`, `rate_type`, `rate`, `extrapolation_factor` |
 | `ust_real_yield_rates` | US Treasury real yield rates (470 rows) | `date`, `tenor`, `rate` |
@@ -2180,6 +2424,72 @@ Used by: `GET /gov-bond/latest/`
 | `data` | list[GovBondLatestItem] | Yes | Array of government bonds with latest OHLCV data |
 | `count` | integer | Yes | Number of records returned |
 
+### FxOhlcvResponse
+
+Used by: `GET /fx/`, nested inside `FxPaginatedResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | UUID | Yes | Unique record identifier |
+| `ticker` | string | Yes | FX pair ticker (e.g., `EURUSD`, `GBPUSD`) |
+| `date` | date | Yes | Trading date |
+| `open` | decimal | No | Opening price |
+| `high` | decimal | No | Highest price |
+| `low` | decimal | No | Lowest price |
+| `close` | decimal | No | Closing price |
+| `adjusted_close` | decimal | No | Adjusted closing price |
+| `volume` | integer | No | Trading volume |
+| `created_at` | datetime | No | Record creation timestamp |
+| `updated_at` | datetime | No | Record last-update timestamp |
+
+> **Note:** Unlike `OhlcvDataResponse`, this schema does **not** include `asset_isin` because the `ohlcv_data_fx` table lacks that column.
+
+### FxPaginatedResponse
+
+Used by: `GET /fx/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[FxOhlcvResponse] | Yes | Array of FX OHLCV records for the current page |
+| `total` | integer | Yes | Total number of matching records across all pages |
+| `page` | integer | Yes | Current page number |
+| `per_page` | integer | Yes | Number of records per page |
+| `total_pages` | integer | Yes | Total number of pages |
+| `has_next` | boolean | Yes | Whether a next page exists |
+| `has_prev` | boolean | Yes | Whether a previous page exists |
+
+### FxLatestItem
+
+Used by: `GET /fx/latest/{ticker}`, nested inside `FxLatestResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `ticker` | string | Yes | FX pair ticker (e.g., `EURUSD`) |
+| `name` | string | No | FX pair name (e.g., `EUR/USD`) |
+| `exchange` | string | No | Exchange (always `FX` for foreign exchange) |
+| `type` | string | No | Asset type (always `currency`) |
+| `currency` | string | No | Trading currency (e.g., `USD`) |
+| `base_currency` | string | No | Base currency code (e.g., `EUR`, `GBP`) |
+| `quote_currency` | string | No | Quote currency code (e.g., `USD`, `JPY`) |
+| `date` | date | No | Trading date |
+| `open` | decimal | No | Opening price |
+| `high` | decimal | No | Highest price |
+| `low` | decimal | No | Lowest price |
+| `close` | decimal | No | Closing price |
+| `adjusted_close` | decimal | No | Adjusted closing price |
+| `volume` | integer | No | Trading volume |
+
+> **Note:** Unlike `GovBondLatestItem`, this schema uses `base_currency`/`quote_currency` instead of `country` because FX pairs are identified by their currency pair composition rather than country.
+
+### FxLatestResponse
+
+Used by: `GET /fx/latest/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[FxLatestItem] | Yes | Array of FX pairs with latest OHLCV data |
+| `count` | integer | Yes | Number of records returned |
+
 ### UstBillRateResponse
 
 Used by: `GET /ust/bill/`, nested inside `UstBillPaginatedResponse`
@@ -2396,6 +2706,8 @@ Used by: `GET /ust/yield/latest/`
 | Historical data for indices | `GET /index/` | Filtered to indices only via `etf_index_assets` |
 | Latest prices for government bonds with metadata | `GET /gov-bond/latest/` | Enriched with name, exchange, type, currency, country |
 | Historical data for government bonds | `GET /gov-bond/` | Filtered to gov bonds only via `gov_bond_assets`; supports country filtering |
+| Latest prices for FX pairs with metadata | `GET /fx/latest/` | Enriched with name, exchange, type, currency, base_currency, quote_currency |
+| Historical data for FX pairs | `GET /fx/` | Filtered to FX pairs only via `fx_assets`; supports base_currency/quote_currency filtering |
 | Latest US Treasury bill rates | `GET /ust/bill/latest/` | Returns latest rates for all 4 bill tenors |
 | Historical US Treasury bill rates | `GET /ust/bill/` | Paginated with date and tenor filtering |
 | Latest US Treasury long-term rates | `GET /ust/long-term/latest/` | Returns latest rates for all 2 rate types |
@@ -2435,6 +2747,14 @@ The S&P 500 endpoints add two features the plain OHLCV endpoints don't provide:
 | `GET /gov-bond/latest/` | `countries=US,DE,JP` | Latest gov bond OHLCV by country | Yes |
 | `GET /gov-bond/latest/` | *(omit tickers)* | Latest for all 117 gov bonds | Yes |
 | `GET /gov-bond/latest/{ticker}` | — | Latest for a single gov bond | Yes |
+| `GET /fx/` | `tickers=EURUSD,GBPUSD,USDJPY` | Paginated FX history | No |
+| `GET /fx/` | `base_currency=EUR` | Paginated FX history by base currency | No |
+| `GET /fx/` | `quote_currency=USD` | Paginated FX history by quote currency | No |
+| `GET /fx/latest/` | `tickers=EURUSD,GBPUSD,USDJPY` | Latest FX OHLCV | Yes |
+| `GET /fx/latest/` | `base_currency=EUR` | Latest FX OHLCV by base currency | Yes |
+| `GET /fx/latest/` | `quote_currency=USD` | Latest FX OHLCV by quote currency | Yes |
+| `GET /fx/latest/` | *(omit tickers)* | Latest for all 948 FX pairs | Yes |
+| `GET /fx/latest/{ticker}` | — | Latest for a single FX pair | Yes |
 | `GET /ust/bill/` | `tenors=4-Week,13-Week` | Paginated bill rate history | No |
 | `GET /ust/bill/latest/` | *(omit tenors)* | Latest for all 4 bill tenors | No |
 | `GET /ust/bill/latest/{tenor}` | — | Latest for a single bill tenor | No |
