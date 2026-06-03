@@ -549,7 +549,7 @@ class FxLatestResponse(BaseModel):
     count: int
 
 
-# ── UK Stock (FTSE 100) Schemas ──────────────────────────────────────────────
+# ── UK Stock (LSE) Schemas ──────────────────────────────────────────────
 
 class UkOhlcvResponse(BaseModel):
     """Single OHLCV record from ohlcv_data_uk (no asset_isin column)."""
@@ -588,7 +588,6 @@ class UkLatestItem(BaseModel):
     type: Optional[str] = None
     sector: Optional[str] = None
     industry: Optional[str] = None
-    weight: Optional[Decimal] = None
     isin: Optional[str] = None
     currency: Optional[str] = None
     date: Optional[date_type] = None
@@ -601,6 +600,6 @@ class UkLatestItem(BaseModel):
 
 
 class UkLatestResponse(BaseModel):
-    """Latest OHLCV for UK stocks (FTSE 100)."""
+    """Latest OHLCV for UK stocks (LSE)."""
     data: List[UkLatestItem]
     count: int

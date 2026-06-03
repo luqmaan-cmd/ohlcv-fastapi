@@ -1966,7 +1966,7 @@ async def get_fx_latest_single(
     )
 
 
-# ── UK Stock (FTSE 100) Endpoints ─────────────────────────────────────────────
+# ── UK Stock (LSE) Endpoints ─────────────────────────────────────────────
 
 @app.get("/uk/", response_model=UkPaginatedResponse)
 async def get_uk_ohlcv_data(
@@ -1992,7 +1992,7 @@ async def get_uk_ohlcv_data(
     api_key: str = Depends(verify_api_key),
 ):
     """
-    List paginated OHLCV data for UK stocks (FTSE 100).
+    List paginated OHLCV data for UK stocks (LSE).
     Only returns data for tickers that exist in uk_assets.
     Supports filtering by ticker(s), sector, and industry.
     """
@@ -2098,10 +2098,10 @@ async def get_uk_latest_batch(
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Returns the latest OHLCV record for UK stocks (FTSE 100).
+    Returns the latest OHLCV record for UK stocks (LSE).
     Uses LATERAL join driven by uk_assets for efficient per-ticker
     latest-row lookups. Enriched with name, exchange, type, sector,
-    industry, weight, isin, currency.
+    industry, isin, currency.
     Optionally filter by specific tickers and/or sector/industry.
     """
     # UK tickers are case-sensitive — preserve original case
@@ -2120,7 +2120,7 @@ async def get_uk_latest_batch(
         ticker_values = ", ".join(f"('{t}')" for t in ticker_list)
         query = text(f"""
             SELECT t.ticker, a.name, a.exchange, a.type, a.sector,
-                   a.industry, a.weight, a.isin, a.currency,
+                   a.industry, a.isin, a.currency,
                    o.id, o.date, o.open, o.high, o.low, o.close,
                    o.adjusted_close, o.volume
             FROM (VALUES {ticker_values}) AS t(ticker)
@@ -2139,7 +2139,7 @@ async def get_uk_latest_batch(
         # All UK stocks: uk_assets as driving row source
         query = text(f"""
             SELECT a.code AS ticker, a.name, a.exchange, a.type, a.sector,
-                   a.industry, a.weight, a.isin, a.currency,
+                   a.industry, a.isin, a.currency,
                    o.id, o.date, o.open, o.high, o.low, o.close,
                    o.adjusted_close, o.volume
             FROM uk_assets a
@@ -2165,7 +2165,6 @@ async def get_uk_latest_batch(
             type=row.type,
             sector=row.sector,
             industry=row.industry,
-            weight=row.weight,
             isin=row.isin,
             currency=row.currency,
             date=row.date,
@@ -2189,9 +2188,9 @@ async def get_uk_latest_single(
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Returns the latest OHLCV record for a single UK stock (FTSE 100),
+    Returns the latest OHLCV record for a single UK stock (LSE),
     enriched with asset metadata (name, exchange, type, sector,
-    industry, weight, isin, currency).
+    industry, isin, currency).
     """
     # Verify the ticker is a UK asset
     asset_query = select(UkAsset).where(UkAsset.code == ticker)
@@ -2222,7 +2221,6 @@ async def get_uk_latest_single(
         type=asset.type,                    # type: ignore[arg-type]
         sector=asset.sector,                # type: ignore[arg-type]
         industry=asset.industry,            # type: ignore[arg-type]
-        weight=asset.weight,                # type: ignore[arg-type]
         isin=asset.isin,                    # type: ignore[arg-type]
         currency=asset.currency,            # type: ignore[arg-type]
         date=ohlcv.date,                    # type: ignore[arg-type]

@@ -222,7 +222,6 @@ class UkAsset(Base):
     type = Column(String, nullable=False)
     sector = Column(String)
     industry = Column(String)
-    weight = Column(Numeric(10, 6))
     isin = Column(String)
     currency = Column(String)
     created_at = Column(DateTime)

@@ -1343,15 +1343,15 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/fx/latest/?api_
 
 ---
 
-## UK Stock (FTSE 100) Data
+## UK Stock (LSE) Data
 
-Dedicated endpoints for UK stocks in the FTSE 100 index with enriched metadata (name, exchange, type, sector, industry, weight, isin, currency). Supports filtering by `sector` and `industry` parameters.
+Dedicated endpoints for UK stocks listed on the London Stock Exchange (LSE) with enriched metadata (name, exchange, type, sector, industry, isin, currency). Supports filtering by `sector` and `industry` parameters.
 
 > **Case-sensitivity note:** UK tickers are **case-sensitive** and must be provided exactly as stored in the database (e.g., `AZN`, not `azn`).
 
 ### List UK Stock OHLCV Data
 
-Returns paginated OHLCV records for UK stocks (FTSE 100) only. Only returns data for tickers that exist in `uk_assets`. Supports filtering by ticker(s), sector, and industry.
+Returns paginated OHLCV records for UK stocks (LSE) only. Only returns data for tickers that exist in `uk_assets`. Supports filtering by ticker(s), sector, and industry.
 
 **Endpoint:** `GET /uk/`
 
@@ -1449,7 +1449,6 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/uk/latest/AZN?a
   "type": "stock",
   "sector": "Healthcare",
   "industry": "Drug Manufacturers - General",
-  "weight": "0.075000",
   "isin": "GB0009895292",
   "currency": "GBP",
   "date": "2026-05-13",
@@ -1497,7 +1496,7 @@ Returns the most recent OHLCV record for one or more UK stocks. If no tickers ar
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `api_key` | string | **Required** | API key for authentication |
-| `tickers` | string | - | Comma-separated UK tickers (e.g., `AZN,SHEL,HSBA`). If omitted, returns latest for all ~100 FTSE 100 stocks. |
+| `tickers` | string | - | Comma-separated UK tickers (e.g., `AZN,SHEL,HSBA`). If omitted, returns latest for all ~3,965 LSE stocks. |
 | `sector` | string | - | Filter by sector (e.g., `Healthcare`, `Energy`) |
 | `industry` | string | - | Filter by industry (e.g., `Drug Manufacturers`, `Oil & Gas`) |
 
@@ -1519,7 +1518,6 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/uk/latest/?api_
       "type": "stock",
       "sector": "Healthcare",
       "industry": "Drug Manufacturers - General",
-      "weight": "0.075000",
       "isin": "GB0009895292",
       "currency": "GBP",
       "date": "2026-05-13",
@@ -1537,7 +1535,6 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/uk/latest/?api_
       "type": "stock",
       "sector": "Financial Services",
       "industry": "Banks - Diversified",
-      "weight": "0.061200",
       "isin": "GB0005405286",
       "currency": "GBP",
       "date": "2026-05-13",
@@ -1555,7 +1552,6 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/uk/latest/?api_
       "type": "stock",
       "sector": "Energy",
       "industry": "Oil & Gas Integrated",
-      "weight": "0.089300",
       "isin": "GB00BP6MXD84",
       "currency": "GBP",
       "date": "2026-05-13",
@@ -1585,7 +1581,7 @@ Returns the latest record for all UK stocks in the Healthcare sector.
 curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/uk/latest/?api_key=YOUR_API_KEY"
 ```
 
-> **Warning:** Omitting the `tickers` parameter returns the latest record for every UK stock in the database (~100 FTSE 100 constituents, of which ~68 have price data).
+> **Warning:** Omitting the `tickers` parameter returns the latest record for every UK stock in the database (~3,965 LSE stocks).
 
 ---
 
@@ -2273,8 +2269,8 @@ The SQL endpoint enforces four guardrails to protect data integrity and performa
 | `gov_bond_assets` | Government bond metadata (117 bonds, 28 countries) | `code`, `name`, `exchange`, `type`, `currency`, `country` |
 | `ohlcv_data_fx` | OHLCV price data for foreign exchange pairs (6.3M+ rows) | `ticker`, `date`, `open`, `high`, `low`, `close`, `adjusted_close`, `volume` |
 | `fx_assets` | Foreign exchange pair metadata (948 pairs) | `code`, `name`, `exchange`, `type`, `currency`, `base_currency`, `quote_currency` |
-| `ohlcv_data_uk` | OHLCV price data for UK stocks / FTSE 100 (478K+ rows) | `ticker`, `date`, `open`, `high`, `low`, `close`, `adjusted_close`, `volume` |
-| `uk_assets` | UK stock / FTSE 100 metadata (100 constituents) | `code`, `name`, `exchange`, `type`, `sector`, `industry`, `weight`, `isin`, `currency` |
+| `ohlcv_data_uk` | OHLCV price data for UK stocks / LSE (11.4M+ rows) | `ticker`, `date`, `open`, `high`, `low`, `close`, `adjusted_close`, `volume` |
+| `uk_assets` | UK stock / LSE metadata (3,965 stocks) | `code`, `name`, `exchange`, `type`, `sector`, `industry`, `isin`, `currency` |
 | `ust_bill_rates` | US Treasury bill rates (658 rows) | `date`, `tenor`, `discount`, `coupon`, `avg_discount`, `avg_coupon`, `maturity_date`, `cusip` |
 | `ust_long_term_rates` | US Treasury long-term rates (282 rows) | `date`, `rate_type`, `rate`, `extrapolation_factor` |
 | `ust_real_yield_rates` | US Treasury real yield rates (470 rows) | `date`, `tenor`, `rate` |
@@ -2782,7 +2778,6 @@ Used by: `GET /uk/latest/`, `GET /uk/latest/{ticker}`, nested inside `UkLatestRe
 | `type` | string | No | Asset type |
 | `sector` | string | No | GICS sector |
 | `industry` | string | No | GICS industry |
-| `weight` | decimal | No | Index weight |
 | `isin` | string | No | ISIN identifier |
 | `currency` | string | No | Trading currency |
 | `date` | date | No | Latest trading date (YYYY-MM-DD) |
@@ -2793,7 +2788,7 @@ Used by: `GET /uk/latest/`, `GET /uk/latest/{ticker}`, nested inside `UkLatestRe
 | `adjusted_close` | decimal | No | Adjusted closing price |
 | `volume` | integer | No | Trading volume |
 
-> **Note:** `weight`, `isin`, and `currency` are currently `NULL` in the database but included in the schema for future population.
+> **Note:** `isin` and `currency` are populated from the `uk_assets` metadata table.
 
 ### UkLatestResponse
 
@@ -3022,8 +3017,8 @@ Used by: `GET /ust/yield/latest/`
 | Historical data for government bonds | `GET /gov-bond/` | Filtered to gov bonds only via `gov_bond_assets`; supports country filtering |
 | Latest prices for FX pairs with metadata | `GET /fx/latest/` | Enriched with name, exchange, type, currency, base_currency, quote_currency |
 | Historical data for FX pairs | `GET /fx/` | Filtered to FX pairs only via `fx_assets`; supports base_currency/quote_currency filtering |
-| Latest prices for UK stocks (FTSE 100) with metadata | `GET /uk/latest/` | Enriched with name, exchange, type, sector, industry, weight, isin, currency |
-| Historical data for UK stocks (FTSE 100) | `GET /uk/` | Filtered to FTSE 100 via `uk_assets`; supports sector/industry filtering |
+| Latest prices for UK stocks (LSE) with metadata | `GET /uk/latest/` | Enriched with name, exchange, type, sector, industry, isin, currency |
+| Historical data for UK stocks (LSE) | `GET /uk/` | Filtered to LSE via `uk_assets`; supports sector/industry filtering |
 | Latest US Treasury bill rates | `GET /ust/bill/latest/` | Returns latest rates for all 4 bill tenors |
 | Historical US Treasury bill rates | `GET /ust/bill/` | Paginated with date and tenor filtering |
 | Latest US Treasury long-term rates | `GET /ust/long-term/latest/` | Returns latest rates for all 2 rate types |
@@ -3077,7 +3072,7 @@ The S&P 500 endpoints add two features the plain OHLCV endpoints don't provide:
 | `GET /uk/latest/` | `tickers=AZN,SHEL,HSBA` | Latest UK stock OHLCV | Yes |
 | `GET /uk/latest/` | `sectors=Healthcare,Energy` | Latest UK stock OHLCV by sector | Yes |
 | `GET /uk/latest/` | `industries=Oil Gas Consumable Fuels` | Latest UK stock OHLCV by industry | Yes |
-| `GET /uk/latest/` | *(omit tickers)* | Latest for all 100 FTSE 100 constituents | Yes |
+| `GET /uk/latest/` | *(omit tickers)* | Latest for all ~3,965 LSE stocks | Yes |
 | `GET /uk/latest/{ticker}` | — | Latest for a single UK stock | Yes |
 | `GET /ust/bill/` | `tenors=4-Week,13-Week` | Paginated bill rate history | No |
 | `GET /ust/bill/latest/` | *(omit tenors)* | Latest for all 4 bill tenors | No |
