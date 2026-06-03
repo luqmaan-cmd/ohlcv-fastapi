@@ -21,6 +21,7 @@ from models import (
     EtfIndexOhlcvData, EtfIndexAsset,
     GovBondOhlcvData, GovBondAsset,
     FxOhlcvData, FxAsset,
+    UkOhlcvData, UkAsset,
     UstBillRate, UstLongTermRate, UstRealYieldRate, UstYieldRate,
 )
 from schemas import (
@@ -38,6 +39,8 @@ from schemas import (
     GovBondLatestItem, GovBondLatestResponse,
     FxOhlcvResponse, FxPaginatedResponse,
     FxLatestItem, FxLatestResponse,
+    UkOhlcvResponse, UkPaginatedResponse,
+    UkLatestItem, UkLatestResponse,
     UstBillRateResponse, UstBillPaginatedResponse,
     UstBillLatestItem, UstBillLatestResponse,
     UstLongTermRateResponse, UstLongTermPaginatedResponse,
@@ -1963,6 +1966,275 @@ async def get_fx_latest_single(
     )
 
 
+# ── UK Stock (FTSE 100) Endpoints ─────────────────────────────────────────────
+
+@app.get("/uk/", response_model=UkPaginatedResponse)
+async def get_uk_ohlcv_data(
+    ticker: Optional[str] = Query(None, description="Single UK ticker (e.g., AZN)"),
+    tickers: Optional[str] = Query(None, description="Comma-separated UK tickers (e.g., AZN,SHEL,HSBA)"),
+    sector: Optional[str] = Query(None, description="Filter by sector (e.g., Healthcare, Energy)"),
+    industry: Optional[str] = Query(None, description="Filter by industry (e.g., Drug Manufacturers, Oil & Gas)"),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    year: Optional[int] = Query(None, ge=1900, le=2100),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    open_min: Optional[Decimal] = Query(None),
+    open_max: Optional[Decimal] = Query(None),
+    close_min: Optional[Decimal] = Query(None),
+    close_max: Optional[Decimal] = Query(None),
+    volume_min: Optional[int] = Query(None),
+    volume_max: Optional[int] = Query(None),
+    sort_by: Optional[str] = Query("date", pattern="^(date|volume|close|open|high|low)$"),
+    sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(1000, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    List paginated OHLCV data for UK stocks (FTSE 100).
+    Only returns data for tickers that exist in uk_assets.
+    Supports filtering by ticker(s), sector, and industry.
+    """
+    # UK tickers are case-sensitive — preserve original case
+    ticker_list = parse_comma_separated_preserve(tickers) or ([ticker] if ticker else None)
+
+    # Build WHERE clauses
+    conditions = []
+    count_conditions = []
+
+    if ticker_list:
+        if len(ticker_list) == 1:
+            conditions.append(UkOhlcvData.ticker == ticker_list[0])
+            count_conditions.append(UkOhlcvData.ticker == ticker_list[0])
+        else:
+            conditions.append(UkOhlcvData.ticker.in_(ticker_list))
+            count_conditions.append(UkOhlcvData.ticker.in_(ticker_list))
+
+    if sector:
+        conditions.append(UkAsset.sector == sector)
+        count_conditions.append(UkAsset.sector == sector)
+
+    if industry:
+        conditions.append(UkAsset.industry == industry)
+        count_conditions.append(UkAsset.industry == industry)
+
+    if start_date:
+        conditions.append(UkOhlcvData.date >= start_date)
+        count_conditions.append(UkOhlcvData.date >= start_date)
+    if end_date:
+        conditions.append(UkOhlcvData.date <= end_date)
+        count_conditions.append(UkOhlcvData.date <= end_date)
+    if year:
+        conditions.append(func.extract("year", UkOhlcvData.date) == year)
+        count_conditions.append(func.extract("year", UkOhlcvData.date) == year)
+    if month:
+        conditions.append(func.extract("month", UkOhlcvData.date) == month)
+        count_conditions.append(func.extract("month", UkOhlcvData.date) == month)
+    if open_min is not None:
+        conditions.append(UkOhlcvData.open >= open_min)
+        count_conditions.append(UkOhlcvData.open >= open_min)
+    if open_max is not None:
+        conditions.append(UkOhlcvData.open <= open_max)
+        count_conditions.append(UkOhlcvData.open <= open_max)
+    if close_min is not None:
+        conditions.append(UkOhlcvData.close >= close_min)
+        count_conditions.append(UkOhlcvData.close >= close_min)
+    if close_max is not None:
+        conditions.append(UkOhlcvData.close <= close_max)
+        count_conditions.append(UkOhlcvData.close <= close_max)
+    if volume_min is not None:
+        conditions.append(UkOhlcvData.volume >= volume_min)
+        count_conditions.append(UkOhlcvData.volume >= volume_min)
+    if volume_max is not None:
+        conditions.append(UkOhlcvData.volume <= volume_max)
+        count_conditions.append(UkOhlcvData.volume <= volume_max)
+
+    # Count query — only count OHLCV rows that have a matching asset
+    count_query = select(func.count(UkOhlcvData.id)).join(
+        UkAsset, UkOhlcvData.ticker == UkAsset.code
+    )
+    for c in count_conditions:
+        count_query = count_query.where(c)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # Data query
+    sort_column = getattr(UkOhlcvData, sort_by or "date")
+    offset = (page - 1) * per_page
+
+    data_query = select(UkOhlcvData).join(
+        UkAsset, UkOhlcvData.ticker == UkAsset.code
+    )
+    for c in conditions:
+        data_query = data_query.where(c)
+    data_query = data_query.order_by(
+        sort_column.desc() if sort_order == "desc" else sort_column.asc()
+    ).offset(offset).limit(per_page)
+
+    result = await db.execute(data_query)
+    data = result.scalars().all()
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+
+    return UkPaginatedResponse(
+        data=data,  # type: ignore[arg-type]
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+
+@app.get("/uk/latest/", response_model=UkLatestResponse)
+async def get_uk_latest_batch(
+    tickers: Optional[str] = Query(None, description="Comma-separated UK tickers (e.g., AZN,SHEL,HSBA). If omitted, returns latest for all UK stocks."),
+    sector: Optional[str] = Query(None, description="Filter by sector (e.g., Healthcare, Energy)"),
+    industry: Optional[str] = Query(None, description="Filter by industry (e.g., Drug Manufacturers, Oil & Gas)"),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest OHLCV record for UK stocks (FTSE 100).
+    Uses LATERAL join driven by uk_assets for efficient per-ticker
+    latest-row lookups. Enriched with name, exchange, type, sector,
+    industry, weight, isin, currency.
+    Optionally filter by specific tickers and/or sector/industry.
+    """
+    # UK tickers are case-sensitive — preserve original case
+    ticker_list = parse_comma_separated_preserve(tickers)
+
+    # Build filter SQL fragments
+    sector_where = ""
+    industry_where = ""
+    if sector:
+        sector_where = f"AND a.sector = '{sector}'"
+    if industry:
+        industry_where = f"AND a.industry = '{industry}'"
+
+    if ticker_list:
+        # Specific tickers: VALUES list as driving row source
+        ticker_values = ", ".join(f"('{t}')" for t in ticker_list)
+        query = text(f"""
+            SELECT t.ticker, a.name, a.exchange, a.type, a.sector,
+                   a.industry, a.weight, a.isin, a.currency,
+                   o.id, o.date, o.open, o.high, o.low, o.close,
+                   o.adjusted_close, o.volume
+            FROM (VALUES {ticker_values}) AS t(ticker)
+            JOIN uk_assets a ON a.code = t.ticker
+            CROSS JOIN LATERAL (
+                SELECT id, date, open, high, low, close, adjusted_close, volume
+                FROM ohlcv_data_uk
+                WHERE ticker = t.ticker
+                ORDER BY date DESC
+                LIMIT 1
+            ) o
+            WHERE 1=1 {sector_where} {industry_where}
+            ORDER BY t.ticker ASC
+        """)
+    else:
+        # All UK stocks: uk_assets as driving row source
+        query = text(f"""
+            SELECT a.code AS ticker, a.name, a.exchange, a.type, a.sector,
+                   a.industry, a.weight, a.isin, a.currency,
+                   o.id, o.date, o.open, o.high, o.low, o.close,
+                   o.adjusted_close, o.volume
+            FROM uk_assets a
+            CROSS JOIN LATERAL (
+                SELECT id, date, open, high, low, close, adjusted_close, volume
+                FROM ohlcv_data_uk
+                WHERE ticker = a.code
+                ORDER BY date DESC
+                LIMIT 1
+            ) o
+            WHERE 1=1 {sector_where} {industry_where}
+            ORDER BY a.code ASC
+        """)
+
+    result = await db.execute(query)
+    rows = result.fetchall()
+
+    items = [
+        UkLatestItem(
+            ticker=row.ticker,
+            name=row.name,
+            exchange=row.exchange,
+            type=row.type,
+            sector=row.sector,
+            industry=row.industry,
+            weight=row.weight,
+            isin=row.isin,
+            currency=row.currency,
+            date=row.date,
+            open=row.open,
+            high=row.high,
+            low=row.low,
+            close=row.close,
+            adjusted_close=row.adjusted_close,
+            volume=row.volume,
+        )
+        for row in rows
+    ]
+
+    return UkLatestResponse(data=items, count=len(items))
+
+
+@app.get("/uk/latest/{ticker}", response_model=UkLatestItem)
+async def get_uk_latest_single(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest OHLCV record for a single UK stock (FTSE 100),
+    enriched with asset metadata (name, exchange, type, sector,
+    industry, weight, isin, currency).
+    """
+    # Verify the ticker is a UK asset
+    asset_query = select(UkAsset).where(UkAsset.code == ticker)
+    asset_result = await db.execute(asset_query)
+    asset = asset_result.scalar_one_or_none()
+
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"No UK stock found with ticker: {ticker}")
+
+    # Get latest OHLCV
+    ohlcv_query = select(UkOhlcvData).where(
+        UkOhlcvData.ticker == ticker
+    ).order_by(UkOhlcvData.date.desc()).limit(1)
+    ohlcv_result = await db.execute(ohlcv_query)
+    ohlcv = ohlcv_result.scalar_one_or_none()
+
+    if not ohlcv:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No OHLCV data found for UK ticker: {ticker}. "
+                   f"The asset exists in uk_assets but has no price data in ohlcv_data_uk."
+        )
+
+    return UkLatestItem(
+        ticker=ticker,
+        name=asset.name,                    # type: ignore[arg-type]
+        exchange=asset.exchange,            # type: ignore[arg-type]
+        type=asset.type,                    # type: ignore[arg-type]
+        sector=asset.sector,                # type: ignore[arg-type]
+        industry=asset.industry,            # type: ignore[arg-type]
+        weight=asset.weight,                # type: ignore[arg-type]
+        isin=asset.isin,                    # type: ignore[arg-type]
+        currency=asset.currency,            # type: ignore[arg-type]
+        date=ohlcv.date,                    # type: ignore[arg-type]
+        open=ohlcv.open,                    # type: ignore[arg-type]
+        high=ohlcv.high,                    # type: ignore[arg-type]
+        low=ohlcv.low,                      # type: ignore[arg-type]
+        close=ohlcv.close,                  # type: ignore[arg-type]
+        adjusted_close=ohlcv.adjusted_close,  # type: ignore[arg-type]
+        volume=ohlcv.volume,                # type: ignore[arg-type]
+    )
+
+
 # ── US Treasury Rate Endpoints ───────────────────────────────────────────────
 
 # --- UST Bill Rates ---
@@ -2580,6 +2852,7 @@ ALLOWED_TABLES = {
     "ohlcv_data_etf_index", "etf_index_assets",
     "ohlcv_data_gov_bonds", "gov_bond_assets",
     "ohlcv_data_fx", "fx_assets",
+    "ohlcv_data_uk", "uk_assets",
     "ust_bill_rates", "ust_long_term_rates", "ust_real_yield_rates", "ust_yield_rates",
 }
 
@@ -2680,6 +2953,7 @@ async def execute_sql(
        4. **Allowed tables** — Only the following tables may be referenced:
           `ohlcv_data`, `assets`, `sp500_constituents`, `ticker_aliases`, `tickers`,
           `ohlcv_data_etf_index`, `etf_index_assets`, `ohlcv_data_gov_bonds`, `gov_bond_assets`,
+          `ohlcv_data_fx`, `fx_assets`, `ohlcv_data_uk`, `uk_assets`,
           `ust_bill_rates`, `ust_long_term_rates`, `ust_real_yield_rates`, `ust_yield_rates`.
     """
     # Guardrails 1, 2 (table whitelist), 3 (forbidden keywords)

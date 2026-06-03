@@ -547,3 +547,60 @@ class FxLatestResponse(BaseModel):
     """Latest OHLCV for FX pairs."""
     data: List[FxLatestItem]
     count: int
+
+
+# ── UK Stock (FTSE 100) Schemas ──────────────────────────────────────────────
+
+class UkOhlcvResponse(BaseModel):
+    """Single OHLCV record from ohlcv_data_uk (no asset_isin column)."""
+    id: UUID
+    ticker: str
+    date: date_type
+    open: Optional[Decimal] = None
+    high: Optional[Decimal] = None
+    low: Optional[Decimal] = None
+    close: Optional[Decimal] = None
+    adjusted_close: Optional[Decimal] = None
+    volume: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UkPaginatedResponse(BaseModel):
+    """Paginated list of UK stock OHLCV records."""
+    data: List[UkOhlcvResponse]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class UkLatestItem(BaseModel):
+    """Single UK stock with latest OHLCV data, enriched with asset metadata."""
+    ticker: str
+    name: Optional[str] = None
+    exchange: Optional[str] = None
+    type: Optional[str] = None
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    weight: Optional[Decimal] = None
+    isin: Optional[str] = None
+    currency: Optional[str] = None
+    date: Optional[date_type] = None
+    open: Optional[Decimal] = None
+    high: Optional[Decimal] = None
+    low: Optional[Decimal] = None
+    close: Optional[Decimal] = None
+    adjusted_close: Optional[Decimal] = None
+    volume: Optional[int] = None
+
+
+class UkLatestResponse(BaseModel):
+    """Latest OHLCV for UK stocks (FTSE 100)."""
+    data: List[UkLatestItem]
+    count: int

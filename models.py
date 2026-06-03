@@ -195,3 +195,35 @@ class FxAsset(Base):
     currency = Column(String)
     created_at = Column(DateTime)
     updated_at = Column(DateTime)
+
+
+class UkOhlcvData(Base):
+    __tablename__ = "ohlcv_data_uk"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ticker = Column(String(20), ForeignKey("uk_assets.code", ondelete="CASCADE"), nullable=False)
+    date = Column(Date, nullable=False)
+    open = Column(Numeric(18, 4))
+    high = Column(Numeric(18, 4))
+    low = Column(Numeric(18, 4))
+    close = Column(Numeric(18, 4))
+    adjusted_close = Column(Numeric(18, 4))
+    volume = Column(BigInteger)
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)
+
+
+class UkAsset(Base):
+    __tablename__ = "uk_assets"
+
+    code = Column(String, primary_key=True)
+    name = Column(String)
+    exchange = Column(String, nullable=False)
+    type = Column(String, nullable=False)
+    sector = Column(String)
+    industry = Column(String)
+    weight = Column(Numeric(10, 6))
+    isin = Column(String)
+    currency = Column(String)
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)
