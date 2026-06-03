@@ -226,3 +226,16 @@ class UkAsset(Base):
     currency = Column(String)
     created_at = Column(DateTime)
     updated_at = Column(DateTime)
+
+
+class Ftse100Constituent(Base):
+    __tablename__ = "ftse100_constituents"
+
+    code = Column(String, primary_key=True)
+    name = Column(String)
+    sector = Column(String)
+    industry = Column(String)
+    isin = Column(String)
+    currency = Column(String)
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)

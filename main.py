@@ -22,6 +22,7 @@ from models import (
     GovBondOhlcvData, GovBondAsset,
     FxOhlcvData, FxAsset,
     UkOhlcvData, UkAsset,
+    Ftse100Constituent,
     UstBillRate, UstLongTermRate, UstRealYieldRate, UstYieldRate,
 )
 from schemas import (
@@ -41,6 +42,8 @@ from schemas import (
     FxLatestItem, FxLatestResponse,
     UkOhlcvResponse, UkPaginatedResponse,
     UkLatestItem, UkLatestResponse,
+    Ftse100LatestItem, Ftse100LatestResponse,
+    Ftse100HistoryItem, Ftse100PaginatedResponse,
     UstBillRateResponse, UstBillPaginatedResponse,
     UstBillLatestItem, UstBillLatestResponse,
     UstLongTermRateResponse, UstLongTermPaginatedResponse,
@@ -2233,6 +2236,347 @@ async def get_uk_latest_single(
     )
 
 
+# ── FTSE 100 Endpoints ─────────────────────────────────────────────────────
+
+@app.get("/ftse100/", response_model=Ftse100PaginatedResponse)
+async def get_ftse100_ohlcv_data(
+    ticker: Optional[str] = Query(None, description="Single FTSE 100 ticker (e.g., AZN)"),
+    tickers: Optional[str] = Query(None, description="Comma-separated FTSE 100 tickers (e.g., AZN,SHEL,HSBA)"),
+    sector: Optional[str] = Query(None, description="Filter by sector (e.g., Healthcare, Energy)"),
+    industry: Optional[str] = Query(None, description="Filter by industry (e.g., Drug Manufacturers, Oil & Gas)"),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    year: Optional[int] = Query(None, ge=1900, le=2100),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    open_min: Optional[Decimal] = Query(None),
+    open_max: Optional[Decimal] = Query(None),
+    close_min: Optional[Decimal] = Query(None),
+    close_max: Optional[Decimal] = Query(None),
+    volume_min: Optional[int] = Query(None),
+    volume_max: Optional[int] = Query(None),
+    sort_by: Optional[str] = Query("date", pattern="^(date|volume|close|open|high|low)$"),
+    sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(1000, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    List paginated OHLCV data for FTSE 100 constituents.
+    Only returns data for tickers that exist in ftse100_constituents.
+    Supports filtering by ticker(s), sector, and industry.
+    Enriched with name, sector, industry from ftse100_constituents and
+    isin, currency from uk_assets.
+    """
+    # FTSE 100 tickers are case-sensitive — preserve original case
+    ticker_list = parse_comma_separated_preserve(tickers) or ([ticker] if ticker else None)
+
+    # Build date filter clauses for raw SQL
+    date_filters = []
+    if start_date:
+        date_filters.append(f"o.date >= '{start_date}'")
+    if end_date:
+        date_filters.append(f"o.date <= '{end_date}'")
+    if year:
+        date_filters.append(f"EXTRACT(year FROM o.date) = {year}")
+    if month:
+        date_filters.append(f"EXTRACT(month FROM o.date) = {month}")
+    if open_min is not None:
+        date_filters.append(f"o.open >= {open_min}")
+    if open_max is not None:
+        date_filters.append(f"o.open <= {open_max}")
+    if close_min is not None:
+        date_filters.append(f"o.close >= {close_min}")
+    if close_max is not None:
+        date_filters.append(f"o.close <= {close_max}")
+    if volume_min is not None:
+        date_filters.append(f"o.volume >= {volume_min}")
+    if volume_max is not None:
+        date_filters.append(f"o.volume <= {volume_max}")
+
+    ohlcv_where = ""
+    if date_filters:
+        ohlcv_where = "AND " + " AND ".join(date_filters)
+
+    # Build sector/industry filter SQL fragments
+    sector_where = ""
+    industry_where = ""
+    if sector:
+        sector_where = f"AND f.sector = '{sector}'"
+    if industry:
+        industry_where = f"AND f.industry = '{industry}'"
+
+    # Map sort_by to the SQL column name
+    sort_col_map = {
+        "date": "o.date", "volume": "o.volume", "close": "o.close",
+        "open": "o.open", "high": "o.high", "low": "o.low"
+    }
+    sort_col = sort_col_map.get(sort_by or "date", "o.date")
+    sort_dir = "DESC" if sort_order == "desc" else "ASC"
+
+    if ticker_list:
+        # Specific tickers: verify all are FTSE 100 constituents
+        check_query = select(Ftse100Constituent.code).where(
+            Ftse100Constituent.code.in_(ticker_list)
+        )
+        check_result = await db.execute(check_query)
+        valid_tickers = {row[0] for row in check_result.all()}
+
+        invalid_tickers = [t for t in ticker_list if t not in valid_tickers]
+        if invalid_tickers:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Ticker(s) not FTSE 100 constituents: {', '.join(invalid_tickers)}"
+            )
+
+        ticker_values = ", ".join(f"'{t}'" for t in ticker_list)
+
+        # Count query — specific tickers
+        count_query = text(f"""
+            SELECT count(*)
+            FROM ftse100_constituents f
+            LEFT JOIN uk_assets ua ON ua.code = f.code
+            JOIN ohlcv_data_uk o ON o.ticker = f.code
+            WHERE f.code IN ({ticker_values})
+            {sector_where} {industry_where}
+            {ohlcv_where}
+        """)
+
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+
+        # Data query with pagination — specific tickers
+        offset = (page - 1) * per_page
+
+        data_query = text(f"""
+            SELECT f.code AS ticker, f.name, f.sector, f.industry,
+                   ua.isin, ua.currency,
+                   o.id, o.date, o.open, o.high, o.low, o.close,
+                   o.adjusted_close, o.volume
+            FROM ftse100_constituents f
+            LEFT JOIN uk_assets ua ON ua.code = f.code
+            JOIN ohlcv_data_uk o ON o.ticker = f.code
+            WHERE f.code IN ({ticker_values})
+            {sector_where} {industry_where}
+            {ohlcv_where}
+            ORDER BY {sort_col} {sort_dir}, f.code ASC
+            LIMIT {per_page} OFFSET {offset}
+        """)
+    else:
+        # All FTSE 100 constituents
+        count_query = text(f"""
+            SELECT count(*)
+            FROM ftse100_constituents f
+            LEFT JOIN uk_assets ua ON ua.code = f.code
+            JOIN ohlcv_data_uk o ON o.ticker = f.code
+            WHERE 1=1
+            {sector_where} {industry_where}
+            {ohlcv_where}
+        """)
+
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+
+        # Data query with pagination — all constituents
+        offset = (page - 1) * per_page
+
+        data_query = text(f"""
+            SELECT f.code AS ticker, f.name, f.sector, f.industry,
+                   ua.isin, ua.currency,
+                   o.id, o.date, o.open, o.high, o.low, o.close,
+                   o.adjusted_close, o.volume
+            FROM ftse100_constituents f
+            LEFT JOIN uk_assets ua ON ua.code = f.code
+            JOIN ohlcv_data_uk o ON o.ticker = f.code
+            WHERE 1=1
+            {sector_where} {industry_where}
+            {ohlcv_where}
+            ORDER BY {sort_col} {sort_dir}, f.code ASC
+            LIMIT {per_page} OFFSET {offset}
+        """)
+
+    result = await db.execute(data_query)
+    rows = result.fetchall()
+
+    items = [
+        Ftse100HistoryItem(
+            ticker=row.ticker,
+            name=row.name,
+            sector=row.sector,
+            industry=row.industry,
+            isin=row.isin,
+            currency=row.currency,
+            date=row.date,
+            open=row.open,
+            high=row.high,
+            low=row.low,
+            close=row.close,
+            adjusted_close=row.adjusted_close,
+            volume=row.volume,
+        )
+        for row in rows
+    ]
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+
+    return Ftse100PaginatedResponse(
+        data=items,
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+
+@app.get("/ftse100/latest/", response_model=Ftse100LatestResponse)
+async def get_ftse100_latest_batch(
+    tickers: Optional[str] = Query(None, description="Comma-separated FTSE 100 tickers (e.g., AZN,SHEL,HSBA). If omitted, returns latest for all FTSE 100 constituents."),
+    sector: Optional[str] = Query(None, description="Filter by sector (e.g., Healthcare, Energy)"),
+    industry: Optional[str] = Query(None, description="Filter by industry (e.g., Drug Manufacturers, Oil & Gas)"),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest OHLCV record for FTSE 100 constituents.
+    Uses LATERAL join driven by ftse100_constituents for efficient per-ticker
+    latest-row lookups. Enriched with name, sector, industry from
+    ftse100_constituents and isin, currency from uk_assets.
+    Optionally filter by specific tickers and/or sector/industry.
+    """
+    # FTSE 100 tickers are case-sensitive — preserve original case
+    ticker_list = parse_comma_separated_preserve(tickers)
+
+    # Build filter SQL fragments
+    sector_where = ""
+    industry_where = ""
+    if sector:
+        sector_where = f"AND f.sector = '{sector}'"
+    if industry:
+        industry_where = f"AND f.industry = '{industry}'"
+
+    if ticker_list:
+        # Specific tickers: VALUES list as driving row source
+        ticker_values = ", ".join(f"('{t}')" for t in ticker_list)
+        query = text(f"""
+            SELECT t.ticker, f.name, f.sector, f.industry,
+                   ua.isin, ua.currency,
+                   o.id, o.date, o.open, o.high, o.low, o.close,
+                   o.adjusted_close, o.volume
+            FROM (VALUES {ticker_values}) AS t(ticker)
+            JOIN ftse100_constituents f ON f.code = t.ticker
+            LEFT JOIN uk_assets ua ON ua.code = t.ticker
+            CROSS JOIN LATERAL (
+                SELECT id, date, open, high, low, close, adjusted_close, volume
+                FROM ohlcv_data_uk
+                WHERE ticker = t.ticker
+                ORDER BY date DESC
+                LIMIT 1
+            ) o
+            WHERE 1=1 {sector_where} {industry_where}
+            ORDER BY t.ticker ASC
+        """)
+    else:
+        # All FTSE 100 constituents: ftse100_constituents as driving row source
+        query = text(f"""
+            SELECT f.code AS ticker, f.name, f.sector, f.industry,
+                   ua.isin, ua.currency,
+                   o.id, o.date, o.open, o.high, o.low, o.close,
+                   o.adjusted_close, o.volume
+            FROM ftse100_constituents f
+            LEFT JOIN uk_assets ua ON ua.code = f.code
+            CROSS JOIN LATERAL (
+                SELECT id, date, open, high, low, close, adjusted_close, volume
+                FROM ohlcv_data_uk
+                WHERE ticker = f.code
+                ORDER BY date DESC
+                LIMIT 1
+            ) o
+            WHERE 1=1 {sector_where} {industry_where}
+            ORDER BY f.code ASC
+        """)
+
+    result = await db.execute(query)
+    rows = result.fetchall()
+
+    items = [
+        Ftse100LatestItem(
+            ticker=row.ticker,
+            name=row.name,
+            sector=row.sector,
+            industry=row.industry,
+            isin=row.isin,
+            currency=row.currency,
+            date=row.date,
+            open=row.open,
+            high=row.high,
+            low=row.low,
+            close=row.close,
+            adjusted_close=row.adjusted_close,
+            volume=row.volume,
+        )
+        for row in rows
+    ]
+
+    return Ftse100LatestResponse(data=items, count=len(items))
+
+
+@app.get("/ftse100/latest/{ticker}", response_model=Ftse100LatestItem)
+async def get_ftse100_latest_single(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest OHLCV record for a single FTSE 100 constituent,
+    enriched with metadata (name, sector, industry from ftse100_constituents
+    and isin, currency from uk_assets).
+    """
+    # Verify the ticker is a FTSE 100 constituent
+    constituent_query = select(Ftse100Constituent).where(Ftse100Constituent.code == ticker)
+    constituent_result = await db.execute(constituent_query)
+    constituent = constituent_result.scalar_one_or_none()
+
+    if not constituent:
+        raise HTTPException(status_code=404, detail=f"No FTSE 100 constituent found with ticker: {ticker}")
+
+    # Get latest OHLCV
+    ohlcv_query = select(UkOhlcvData).where(
+        UkOhlcvData.ticker == ticker
+    ).order_by(UkOhlcvData.date.desc()).limit(1)
+    ohlcv_result = await db.execute(ohlcv_query)
+    ohlcv = ohlcv_result.scalar_one_or_none()
+
+    if not ohlcv:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No OHLCV data found for FTSE 100 ticker: {ticker}. "
+                   f"The constituent exists in ftse100_constituents but has no price data in ohlcv_data_uk."
+        )
+
+    # Get isin/currency from uk_assets
+    asset_query = select(UkAsset).where(UkAsset.code == ticker)
+    asset_result = await db.execute(asset_query)
+    asset = asset_result.scalar_one_or_none()
+
+    return Ftse100LatestItem(
+        ticker=ticker,
+        name=constituent.name,                # type: ignore[arg-type]
+        sector=constituent.sector,            # type: ignore[arg-type]
+        industry=constituent.industry,        # type: ignore[arg-type]
+        isin=asset.isin if asset else None,       # type: ignore[arg-type]
+        currency=asset.currency if asset else None,  # type: ignore[arg-type]
+        date=ohlcv.date,                      # type: ignore[arg-type]
+        open=ohlcv.open,                      # type: ignore[arg-type]
+        high=ohlcv.high,                      # type: ignore[arg-type]
+        low=ohlcv.low,                        # type: ignore[arg-type]
+        close=ohlcv.close,                    # type: ignore[arg-type]
+        adjusted_close=ohlcv.adjusted_close,  # type: ignore[arg-type]
+        volume=ohlcv.volume,                  # type: ignore[arg-type]
+    )
+
+
 # ── US Treasury Rate Endpoints ───────────────────────────────────────────────
 
 # --- UST Bill Rates ---
@@ -2850,7 +3194,7 @@ ALLOWED_TABLES = {
     "ohlcv_data_etf_index", "etf_index_assets",
     "ohlcv_data_gov_bonds", "gov_bond_assets",
     "ohlcv_data_fx", "fx_assets",
-    "ohlcv_data_uk", "uk_assets",
+    "ohlcv_data_uk", "uk_assets", "ftse100_constituents",
     "ust_bill_rates", "ust_long_term_rates", "ust_real_yield_rates", "ust_yield_rates",
 }
 

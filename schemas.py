@@ -603,3 +603,56 @@ class UkLatestResponse(BaseModel):
     """Latest OHLCV for UK stocks (LSE)."""
     data: List[UkLatestItem]
     count: int
+
+
+# ── FTSE 100 Schemas ──────────────────────────────────────────────────────
+
+class Ftse100LatestItem(BaseModel):
+    """Single FTSE 100 constituent with latest OHLCV data, enriched with metadata."""
+    ticker: str
+    name: Optional[str] = None
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    isin: Optional[str] = None
+    currency: Optional[str] = None
+    date: Optional[date_type] = None
+    open: Optional[Decimal] = None
+    high: Optional[Decimal] = None
+    low: Optional[Decimal] = None
+    close: Optional[Decimal] = None
+    adjusted_close: Optional[Decimal] = None
+    volume: Optional[int] = None
+
+
+class Ftse100LatestResponse(BaseModel):
+    """Latest OHLCV for FTSE 100 constituents."""
+    data: List[Ftse100LatestItem]
+    count: int
+
+
+class Ftse100HistoryItem(BaseModel):
+    """Single OHLCV record for a FTSE 100 constituent, enriched with metadata."""
+    ticker: str
+    name: Optional[str] = None
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    isin: Optional[str] = None
+    currency: Optional[str] = None
+    date: Optional[date_type] = None
+    open: Optional[Decimal] = None
+    high: Optional[Decimal] = None
+    low: Optional[Decimal] = None
+    close: Optional[Decimal] = None
+    adjusted_close: Optional[Decimal] = None
+    volume: Optional[int] = None
+
+
+class Ftse100PaginatedResponse(BaseModel):
+    """Paginated historical OHLCV for FTSE 100 constituents."""
+    data: List[Ftse100HistoryItem]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
