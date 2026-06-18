@@ -21,7 +21,8 @@ gcloud run deploy $SERVICE_NAME \
   --max-instances 20 \
   --concurrency 100 \
   --memory 2Gi \
-  --cpu 4
+  --cpu 4 \
+  --set-env-vars="DB_POOL_SIZE=3,DB_MAX_OVERFLOW=2"
 
 echo "Deployment complete!"
 gcloud run services describe $SERVICE_NAME --region $REGION --format 'value(status.url)'
