@@ -1694,6 +1694,86 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/crypto/top100/?
 
 Returns the top 100 crypto assets by volume where the quote currency is USD.
 
+### List Crypto Assets
+
+Returns a paginated list of all crypto asset metadata (no OHLCV price data). Useful for discovering available tickers and their base/quote currencies.
+
+**Endpoint:** `GET /crypto/assets/`
+
+#### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `base_currency` | string | - | Filter by base currency (e.g., `BTC`, `ETH`) |
+| `quote_currency` | string | - | Filter by quote currency (e.g., `USD`, `EUR`) |
+| `type` | string | - | Filter by type (e.g., `cryptocurrency`) |
+| `search` | string | - | Search code or name (case-insensitive partial match) |
+| `sort` | string | `code` | Sort field: `code` or `name` |
+| `order` | string | `asc` | Sort order: `asc` or `desc` |
+| `page` | integer | `1` | Page number (≥ 1) |
+| `per_page` | integer | `50` | Results per page (1–500) |
+
+#### Example Request
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/crypto/assets/?api_key=YOUR_API_KEY&per_page=3"
+```
+
+#### Example Response
+
+```json
+{
+  "data": [
+    {
+      "code": "00-USD",
+      "name": "00 Token USD",
+      "exchange": "CC",
+      "type": "cryptocurrency",
+      "base_currency": "00",
+      "quote_currency": "USD",
+      "currency": "USD"
+    },
+    {
+      "code": "0G-USD",
+      "name": "0G",
+      "exchange": "CC",
+      "type": "cryptocurrency",
+      "base_currency": "0G",
+      "quote_currency": "USD",
+      "currency": "USD"
+    },
+    {
+      "code": "0X0-USD",
+      "name": "0x0.ai USD",
+      "exchange": "CC",
+      "type": "cryptocurrency",
+      "base_currency": "0X0",
+      "quote_currency": "USD",
+      "currency": "USD"
+    }
+  ],
+  "total": 2847,
+  "page": 1,
+  "per_page": 3,
+  "total_pages": 949,
+  "has_next": true,
+  "has_prev": false
+}
+```
+
+#### Example Request — Search by Name
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/crypto/assets/?api_key=YOUR_API_KEY&search=bitcoin"
+```
+
+#### Example Request — Filter by Base Currency
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/crypto/assets/?api_key=YOUR_API_KEY&base_currency=BTC"
+```
+
 ---
 
 ## UK Stock (LSE) Data
@@ -3462,6 +3542,34 @@ Used by: `GET /crypto/top100/`
 | `data` | list[CryptoTop100Item] | Yes | Array of top 100 crypto assets by volume with latest OHLCV data |
 | `count` | integer | Yes | Number of records returned |
 
+### CryptoAssetItem
+
+Used by: nested inside `CryptoAssetResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `code` | string | Yes | Crypto ticker code (e.g., `BTC-USD`, `ETH-USD`) |
+| `name` | string | No | Asset name (e.g., `Bitcoin`, `Ethereum`) |
+| `exchange` | string | No | Exchange code (e.g., `CC`) |
+| `type` | string | No | Asset type (e.g., `cryptocurrency`) |
+| `base_currency` | string | No | Base currency (e.g., `BTC`, `ETH`) |
+| `quote_currency` | string | No | Quote currency (e.g., `USD`, `EUR`) |
+| `currency` | string | No | Pricing currency |
+
+### CryptoAssetResponse
+
+Used by: `GET /crypto/assets/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[CryptoAssetItem] | Yes | Array of crypto asset metadata |
+| `total` | integer | Yes | Total matching records |
+| `page` | integer | Yes | Current page number |
+| `per_page` | integer | Yes | Results per page |
+| `total_pages` | integer | Yes | Total number of pages |
+| `has_next` | boolean | Yes | Whether a next page exists |
+| `has_prev` | boolean | Yes | Whether a previous page exists |
+
 ### UkOhlcvResponse
 
 Used by: `GET /uk/`, nested inside `UkPaginatedResponse`
@@ -3815,6 +3923,7 @@ Used by: `GET /ust/yield/latest/`
 | Latest prices for crypto assets with metadata | `GET /crypto/latest/` | Enriched with name, exchange, type, currency, base_currency, quote_currency |
 | Historical data for crypto assets | `GET /crypto/` | Filtered to crypto via `crypto_assets`; supports base_currency/quote_currency filtering |
 | Top 100 crypto by volume with notional value | `GET /crypto/top100/` | Ranked by latest volume DESC; includes close × volume as `notional_value` |
+| Browse available crypto assets (no price data) | `GET /crypto/assets/` | Metadata only: code, name, exchange, type, base/quote currency; searchable |
 | Latest prices for UK stocks (LSE) with metadata | `GET /uk/latest/` | Enriched with name, exchange, type, sector, industry, isin, currency |
 | Historical data for UK stocks (LSE) | `GET /uk/` | Filtered to LSE via `uk_assets`; supports sector/industry filtering |
 | Latest prices for FTSE 100 constituents with metadata | `GET /ftse100/latest/` | Enriched with name, sector, industry, isin, currency; constituent verification |
@@ -3877,6 +3986,7 @@ The S&P 500 endpoints add two features the plain OHLCV endpoints don't provide:
 | `GET /crypto/history/` | `tickers=BTC-USD,ETH-USD` | Paginated crypto history with metadata | Yes |
 | `GET /crypto/history/` | *(omit tickers)* | Paginated history for all crypto assets | Yes |
 | `GET /crypto/top100/` | — | Top 100 crypto by volume with notional_value | Yes |
+| `GET /crypto/assets/` | — | List all crypto asset metadata (no OHLCV) | Yes |
 | `GET /uk/` | `tickers=AZN,SHEL,HSBA` | Paginated UK stock history | No |
 | `GET /uk/` | `sectors=Healthcare,Energy` | Paginated UK stock history by sector | No |
 | `GET /uk/` | `industries=Oil Gas Consumable Fuels` | Paginated UK stock history by industry | No |

@@ -765,3 +765,28 @@ class CryptoTop100Response(BaseModel):
     """Top 100 crypto assets by volume."""
     data: List[CryptoTop100Item]
     count: int
+
+
+class CryptoAssetItem(BaseModel):
+    """Single crypto asset metadata."""
+    code: str
+    name: Optional[str] = None
+    exchange: Optional[str] = None
+    type: Optional[str] = None
+    base_currency: Optional[str] = None
+    quote_currency: Optional[str] = None
+    currency: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CryptoAssetResponse(BaseModel):
+    """Paginated list of crypto asset metadata."""
+    data: List[CryptoAssetItem]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool

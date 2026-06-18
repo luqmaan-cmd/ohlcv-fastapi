@@ -57,6 +57,7 @@ from schemas import (
     CryptoLatestItem, CryptoLatestResponse,
     CryptoHistoryItem, CryptoHistoryPaginatedResponse,
     CryptoTop100Item, CryptoTop100Response,
+    CryptoAssetItem, CryptoAssetResponse,
 )
 
 API_KEY = os.getenv("API_KEY", "ohlcv-api-key-2024-secure")
@@ -2433,6 +2434,79 @@ async def get_crypto_top100(
     ]
 
     return CryptoTop100Response(data=items, count=len(items))
+
+
+@app.get("/crypto/assets/", response_model=CryptoAssetResponse)
+async def get_crypto_assets(
+    base_currency: Optional[str] = Query(None, description="Filter by base currency (e.g., BTC, ETH)"),
+    quote_currency: Optional[str] = Query(None, description="Filter by quote currency (e.g., USD, EUR)"),
+    type: Optional[str] = Query(None, description="Filter by type (e.g., cryptocurrency)"),
+    search: Optional[str] = Query(None, description="Search code or name (case-insensitive partial match)"),
+    sort: Optional[str] = Query("code", description="Sort field: code, name"),
+    order: Optional[str] = Query("asc", description="Sort order: asc or desc"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    conditions = []
+
+    if base_currency:
+        conditions.append(CryptoAsset.base_currency == base_currency.upper())
+    if quote_currency:
+        conditions.append(CryptoAsset.quote_currency == quote_currency.upper())
+    if type:
+        conditions.append(CryptoAsset.type == type)
+    if search:
+        pattern = f"%{search}%"
+        conditions.append(
+            (CryptoAsset.code.ilike(pattern)) | (CryptoAsset.name.ilike(pattern))
+        )
+
+    count_query = select(func.count(CryptoAsset.code))
+    for c in conditions:
+        count_query = count_query.where(c)
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    allowed_sorts = {"code", "name"}
+    sort_field = sort if sort in allowed_sorts else "code"
+    sort_col = getattr(CryptoAsset, sort_field)
+    offset = (page - 1) * per_page
+
+    data_query = select(CryptoAsset)
+    for c in conditions:
+        data_query = data_query.where(c)
+    data_query = data_query.order_by(
+        sort_col.asc() if order == "asc" else sort_col.desc()
+    ).offset(offset).limit(per_page)
+
+    result = await db.execute(data_query)
+    rows = result.scalars().all()
+
+    items = [
+        CryptoAssetItem(
+            code=row.code,                          # type: ignore[arg-type]
+            name=row.name,                          # type: ignore[arg-type]
+            exchange=row.exchange,                   # type: ignore[arg-type]
+            type=row.type,                          # type: ignore[arg-type]
+            base_currency=row.base_currency,        # type: ignore[arg-type]
+            quote_currency=row.quote_currency,       # type: ignore[arg-type]
+            currency=row.currency,                  # type: ignore[arg-type]
+        )
+        for row in rows
+    ]
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+    return CryptoAssetResponse(
+        data=items,
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
 
 
 # ── UK Stock (LSE) Endpoints ─────────────────────────────────────────────
