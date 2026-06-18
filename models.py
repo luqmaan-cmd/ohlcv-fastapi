@@ -239,3 +239,33 @@ class Ftse100Constituent(Base):
     currency = Column(String)
     created_at = Column(DateTime)
     updated_at = Column(DateTime)
+
+
+class CryptoOhlcvData(Base):
+    __tablename__ = "ohlcv_data_crypto"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ticker = Column(String(50), ForeignKey("crypto_assets.code", ondelete="CASCADE"), nullable=False)
+    date = Column(Date, nullable=False)
+    open = Column(Numeric(18, 4))
+    high = Column(Numeric(18, 4))
+    low = Column(Numeric(18, 4))
+    close = Column(Numeric(18, 4))
+    adjusted_close = Column(Numeric(18, 4))
+    volume = Column(BigInteger)
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)
+
+
+class CryptoAsset(Base):
+    __tablename__ = "crypto_assets"
+
+    code = Column(String(50), primary_key=True)
+    name = Column(String(500))
+    exchange = Column(String(50), nullable=False)
+    base_currency = Column(String(50))
+    quote_currency = Column(String(50))
+    type = Column(String(20), nullable=False)
+    currency = Column(String(10))
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)

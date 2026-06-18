@@ -656,3 +656,112 @@ class Ftse100PaginatedResponse(BaseModel):
     total_pages: int
     has_next: bool
     has_prev: bool
+
+
+# ── Crypto Schemas ──────────────────────────────────────────────────────────────
+
+class CryptoOhlcvResponse(BaseModel):
+    """Single OHLCV record from ohlcv_data_crypto."""
+    id: UUID
+    ticker: str
+    date: date_type
+    open: Optional[Decimal] = None
+    high: Optional[Decimal] = None
+    low: Optional[Decimal] = None
+    close: Optional[Decimal] = None
+    adjusted_close: Optional[Decimal] = None
+    volume: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CryptoPaginatedResponse(BaseModel):
+    """Paginated list of crypto OHLCV records."""
+    data: List[CryptoOhlcvResponse]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class CryptoLatestItem(BaseModel):
+    """Single crypto with latest OHLCV data, enriched with asset metadata."""
+    ticker: str
+    name: Optional[str] = None
+    exchange: Optional[str] = None
+    type: Optional[str] = None
+    currency: Optional[str] = None
+    base_currency: Optional[str] = None
+    quote_currency: Optional[str] = None
+    date: Optional[date_type] = None
+    open: Optional[Decimal] = None
+    high: Optional[Decimal] = None
+    low: Optional[Decimal] = None
+    close: Optional[Decimal] = None
+    adjusted_close: Optional[Decimal] = None
+    volume: Optional[int] = None
+
+
+class CryptoLatestResponse(BaseModel):
+    """Latest OHLCV for crypto assets."""
+    data: List[CryptoLatestItem]
+    count: int
+
+
+class CryptoHistoryItem(BaseModel):
+    """Single OHLCV record for a crypto asset, enriched with metadata."""
+    ticker: str
+    name: Optional[str] = None
+    exchange: Optional[str] = None
+    type: Optional[str] = None
+    currency: Optional[str] = None
+    base_currency: Optional[str] = None
+    quote_currency: Optional[str] = None
+    date: Optional[date_type] = None
+    open: Optional[Decimal] = None
+    high: Optional[Decimal] = None
+    low: Optional[Decimal] = None
+    close: Optional[Decimal] = None
+    adjusted_close: Optional[Decimal] = None
+    volume: Optional[int] = None
+
+
+class CryptoHistoryPaginatedResponse(BaseModel):
+    """Paginated historical OHLCV for crypto assets."""
+    data: List[CryptoHistoryItem]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class CryptoTop100Item(BaseModel):
+    """Single crypto ranked by volume, enriched with asset metadata."""
+    ticker: str
+    name: Optional[str] = None
+    exchange: Optional[str] = None
+    type: Optional[str] = None
+    currency: Optional[str] = None
+    base_currency: Optional[str] = None
+    quote_currency: Optional[str] = None
+    date: Optional[date_type] = None
+    open: Optional[Decimal] = None
+    high: Optional[Decimal] = None
+    low: Optional[Decimal] = None
+    close: Optional[Decimal] = None
+    adjusted_close: Optional[Decimal] = None
+    volume: Optional[int] = None
+    notional_value: Optional[Decimal] = None
+
+
+class CryptoTop100Response(BaseModel):
+    """Top 100 crypto assets by volume."""
+    data: List[CryptoTop100Item]
+    count: int

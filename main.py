@@ -24,6 +24,7 @@ from models import (
     UkOhlcvData, UkAsset,
     Ftse100Constituent,
     UstBillRate, UstLongTermRate, UstRealYieldRate, UstYieldRate,
+    CryptoOhlcvData, CryptoAsset,
 )
 from schemas import (
     OhlcvDataCreate, OhlcvDataUpdate, OhlcvDataResponse,
@@ -52,6 +53,10 @@ from schemas import (
     UstRealYieldLatestItem, UstRealYieldLatestResponse,
     UstYieldRateResponse, UstYieldPaginatedResponse,
     UstYieldLatestItem, UstYieldLatestResponse,
+    CryptoOhlcvResponse, CryptoPaginatedResponse,
+    CryptoLatestItem, CryptoLatestResponse,
+    CryptoHistoryItem, CryptoHistoryPaginatedResponse,
+    CryptoTop100Item, CryptoTop100Response,
 )
 
 API_KEY = os.getenv("API_KEY", "ohlcv-api-key-2024-secure")
@@ -1969,6 +1974,467 @@ async def get_fx_latest_single(
     )
 
 
+# ── Crypto Endpoints ─────────────────────────────────────────────────────────
+
+@app.get("/crypto/", response_model=CryptoPaginatedResponse)
+async def get_crypto_ohlcv_data(
+    ticker: Optional[str] = Query(None, description="Single crypto ticker (e.g., BTC-USD)"),
+    tickers: Optional[str] = Query(None, description="Comma-separated crypto tickers (e.g., BTC-USD,ETH-USD,SOL-USD)"),
+    base_currency: Optional[str] = Query(None, description="Filter by base currency code (e.g., BTC, ETH)"),
+    quote_currency: Optional[str] = Query(None, description="Filter by quote currency code (e.g., USD, USDT)"),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    year: Optional[int] = Query(None, ge=1900, le=2100),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    open_min: Optional[Decimal] = Query(None),
+    open_max: Optional[Decimal] = Query(None),
+    close_min: Optional[Decimal] = Query(None),
+    close_max: Optional[Decimal] = Query(None),
+    volume_min: Optional[int] = Query(None),
+    volume_max: Optional[int] = Query(None),
+    sort_by: Optional[str] = Query("date", pattern="^(date|volume|close|open|high|low)$"),
+    sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(1000, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    List paginated OHLCV data for crypto assets.
+    Only returns data for tickers that exist in crypto_assets.
+    Supports filtering by ticker(s), base_currency, and quote_currency.
+    """
+    ticker_list = parse_comma_separated_preserve(tickers) or ([ticker] if ticker else None)
+
+    conditions = []
+    count_conditions = []
+
+    if ticker_list:
+        if len(ticker_list) == 1:
+            conditions.append(CryptoOhlcvData.ticker == ticker_list[0])
+            count_conditions.append(CryptoOhlcvData.ticker == ticker_list[0])
+        else:
+            conditions.append(CryptoOhlcvData.ticker.in_(ticker_list))
+            count_conditions.append(CryptoOhlcvData.ticker.in_(ticker_list))
+
+    if base_currency:
+        conditions.append(CryptoAsset.base_currency == base_currency.upper())
+        count_conditions.append(CryptoAsset.base_currency == base_currency.upper())
+
+    if quote_currency:
+        conditions.append(CryptoAsset.quote_currency == quote_currency.upper())
+        count_conditions.append(CryptoAsset.quote_currency == quote_currency.upper())
+
+    if start_date:
+        conditions.append(CryptoOhlcvData.date >= start_date)
+        count_conditions.append(CryptoOhlcvData.date >= start_date)
+    if end_date:
+        conditions.append(CryptoOhlcvData.date <= end_date)
+        count_conditions.append(CryptoOhlcvData.date <= end_date)
+    if year:
+        conditions.append(func.extract("year", CryptoOhlcvData.date) == year)
+        count_conditions.append(func.extract("year", CryptoOhlcvData.date) == year)
+    if month:
+        conditions.append(func.extract("month", CryptoOhlcvData.date) == month)
+        count_conditions.append(func.extract("month", CryptoOhlcvData.date) == month)
+    if open_min is not None:
+        conditions.append(CryptoOhlcvData.open >= open_min)
+        count_conditions.append(CryptoOhlcvData.open >= open_min)
+    if open_max is not None:
+        conditions.append(CryptoOhlcvData.open <= open_max)
+        count_conditions.append(CryptoOhlcvData.open <= open_max)
+    if close_min is not None:
+        conditions.append(CryptoOhlcvData.close >= close_min)
+        count_conditions.append(CryptoOhlcvData.close >= close_min)
+    if close_max is not None:
+        conditions.append(CryptoOhlcvData.close <= close_max)
+        count_conditions.append(CryptoOhlcvData.close <= close_max)
+    if volume_min is not None:
+        conditions.append(CryptoOhlcvData.volume >= volume_min)
+        count_conditions.append(CryptoOhlcvData.volume >= volume_min)
+    if volume_max is not None:
+        conditions.append(CryptoOhlcvData.volume <= volume_max)
+        count_conditions.append(CryptoOhlcvData.volume <= volume_max)
+
+    count_query = select(func.count(CryptoOhlcvData.id)).join(
+        CryptoAsset, CryptoOhlcvData.ticker == CryptoAsset.code
+    )
+    for c in count_conditions:
+        count_query = count_query.where(c)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    sort_column = getattr(CryptoOhlcvData, sort_by or "date")
+    offset = (page - 1) * per_page
+
+    data_query = select(CryptoOhlcvData).join(
+        CryptoAsset, CryptoOhlcvData.ticker == CryptoAsset.code
+    )
+    for c in conditions:
+        data_query = data_query.where(c)
+    data_query = data_query.order_by(
+        sort_column.desc() if sort_order == "desc" else sort_column.asc()
+    ).offset(offset).limit(per_page)
+
+    result = await db.execute(data_query)
+    data = result.scalars().all()
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+
+    return CryptoPaginatedResponse(
+        data=data,  # type: ignore[arg-type]
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+
+@app.get("/crypto/latest/", response_model=CryptoLatestResponse)
+async def get_crypto_latest_batch(
+    tickers: Optional[str] = Query(None, description="Comma-separated crypto tickers (e.g., BTC-USD,ETH-USD,SOL-USD). If omitted, returns latest for all crypto assets."),
+    base_currency: Optional[str] = Query(None, description="Filter by base currency code (e.g., BTC, ETH)"),
+    quote_currency: Optional[str] = Query(None, description="Filter by quote currency code (e.g., USD, USDT)"),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest OHLCV record for crypto assets.
+    Uses LATERAL join driven by crypto_assets for efficient per-ticker
+    latest-row lookups. Enriched with name, exchange, type, currency,
+    base_currency, quote_currency.
+    Optionally filter by specific tickers and/or base_currency/quote_currency.
+    """
+    ticker_list = parse_comma_separated_preserve(tickers)
+
+    base_where = ""
+    quote_where = ""
+    if base_currency:
+        base_where = f"AND a.base_currency = '{base_currency.upper()}'"
+    if quote_currency:
+        quote_where = f"AND a.quote_currency = '{quote_currency.upper()}'"
+
+    if ticker_list:
+        ticker_values = ", ".join(f"('{t}')" for t in ticker_list)
+        query = text(f"""
+            SELECT t.ticker, a.name, a.exchange, a.type, a.currency,
+                   a.base_currency, a.quote_currency,
+                   o.id, o.date, o.open, o.high, o.low, o.close,
+                   o.adjusted_close, o.volume
+            FROM (VALUES {ticker_values}) AS t(ticker)
+            JOIN crypto_assets a ON a.code = t.ticker
+            CROSS JOIN LATERAL (
+                SELECT id, date, open, high, low, close, adjusted_close, volume
+                FROM ohlcv_data_crypto
+                WHERE ticker = t.ticker
+                ORDER BY date DESC
+                LIMIT 1
+            ) o
+            WHERE 1=1 {base_where} {quote_where}
+            ORDER BY t.ticker ASC
+        """)
+    else:
+        query = text(f"""
+            SELECT a.code AS ticker, a.name, a.exchange, a.type, a.currency,
+                   a.base_currency, a.quote_currency,
+                   o.id, o.date, o.open, o.high, o.low, o.close,
+                   o.adjusted_close, o.volume
+            FROM crypto_assets a
+            CROSS JOIN LATERAL (
+                SELECT id, date, open, high, low, close, adjusted_close, volume
+                FROM ohlcv_data_crypto
+                WHERE ticker = a.code
+                ORDER BY date DESC
+                LIMIT 1
+            ) o
+            WHERE 1=1 {base_where} {quote_where}
+            ORDER BY a.code ASC
+        """)
+
+    result = await db.execute(query)
+    rows = result.fetchall()
+
+    items = [
+        CryptoLatestItem(
+            ticker=row.ticker,
+            name=row.name,
+            exchange=row.exchange,
+            type=row.type,
+            currency=row.currency,
+            base_currency=row.base_currency,
+            quote_currency=row.quote_currency,
+            date=row.date,
+            open=row.open,
+            high=row.high,
+            low=row.low,
+            close=row.close,
+            adjusted_close=row.adjusted_close,
+            volume=row.volume,
+        )
+        for row in rows
+    ]
+
+    return CryptoLatestResponse(data=items, count=len(items))
+
+
+@app.get("/crypto/latest/{ticker}", response_model=CryptoLatestItem)
+async def get_crypto_latest_single(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest OHLCV record for a single crypto asset,
+    enriched with asset metadata (name, exchange, type, currency,
+    base_currency, quote_currency).
+    """
+    asset_query = select(CryptoAsset).where(CryptoAsset.code == ticker)
+    asset_result = await db.execute(asset_query)
+    asset = asset_result.scalar_one_or_none()
+
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"No crypto asset found with ticker: {ticker}")
+
+    ohlcv_query = select(CryptoOhlcvData).where(
+        CryptoOhlcvData.ticker == ticker
+    ).order_by(CryptoOhlcvData.date.desc()).limit(1)
+    ohlcv_result = await db.execute(ohlcv_query)
+    ohlcv = ohlcv_result.scalar_one_or_none()
+
+    if not ohlcv:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No OHLCV data found for crypto ticker: {ticker}. "
+                   f"The asset exists in crypto_assets but has no price data in ohlcv_data_crypto."
+        )
+
+    return CryptoLatestItem(
+        ticker=ticker,
+        name=asset.name,                    # type: ignore[arg-type]
+        exchange=asset.exchange,            # type: ignore[arg-type]
+        type=asset.type,                    # type: ignore[arg-type]
+        currency=asset.currency,            # type: ignore[arg-type]
+        base_currency=asset.base_currency,  # type: ignore[arg-type]
+        quote_currency=asset.quote_currency,  # type: ignore[arg-type]
+        date=ohlcv.date,                    # type: ignore[arg-type]
+        open=ohlcv.open,                    # type: ignore[arg-type]
+        high=ohlcv.high,                    # type: ignore[arg-type]
+        low=ohlcv.low,                      # type: ignore[arg-type]
+        close=ohlcv.close,                  # type: ignore[arg-type]
+        adjusted_close=ohlcv.adjusted_close,  # type: ignore[arg-type]
+        volume=ohlcv.volume,                # type: ignore[arg-type]
+    )
+
+
+@app.get("/crypto/history/", response_model=CryptoHistoryPaginatedResponse)
+async def get_crypto_history(
+    tickers: Optional[str] = Query(None, description="Comma-separated crypto tickers (e.g., BTC-USD,ETH-USD). If omitted, returns history for all crypto assets."),
+    base_currency: Optional[str] = Query(None, description="Filter by base currency code (e.g., BTC, ETH)"),
+    quote_currency: Optional[str] = Query(None, description="Filter by quote currency code (e.g., USD, USDT)"),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    year: Optional[int] = Query(None, ge=1900, le=2100),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    sort_by: Optional[str] = Query("date", pattern="^(date|volume|close|open|high|low)$"),
+    sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(1000, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns paginated historical OHLCV data for crypto assets.
+    Enriched with name, exchange, type, currency, base_currency, quote_currency
+    from crypto_assets.
+    """
+    ticker_list = parse_comma_separated_preserve(tickers)
+
+    date_filters = []
+    if start_date:
+        date_filters.append(f"o.date >= '{start_date}'")
+    if end_date:
+        date_filters.append(f"o.date <= '{end_date}'")
+    if year:
+        date_filters.append(f"EXTRACT(year FROM o.date) = {year}")
+    if month:
+        date_filters.append(f"EXTRACT(month FROM o.date) = {month}")
+
+    date_where = ""
+    if date_filters:
+        date_where = "AND " + " AND ".join(date_filters)
+
+    base_where = ""
+    quote_where = ""
+    if base_currency:
+        base_where = f"AND a.base_currency = '{base_currency.upper()}'"
+    if quote_currency:
+        quote_where = f"AND a.quote_currency = '{quote_currency.upper()}'"
+
+    sort_col_map = {
+        "date": "o.date", "volume": "o.volume", "close": "o.close",
+        "open": "o.open", "high": "o.high", "low": "o.low"
+    }
+    sort_col = sort_col_map.get(sort_by or "date", "o.date")
+    sort_dir = "DESC" if sort_order == "desc" else "ASC"
+
+    if ticker_list:
+        ticker_values = ", ".join(f"('{t}')" for t in ticker_list)
+
+        count_query = text(f"""
+            SELECT count(*)
+            FROM (VALUES {ticker_values}) AS t(ticker)
+            JOIN crypto_assets a ON a.code = t.ticker
+            JOIN ohlcv_data_crypto o ON o.ticker = t.ticker
+            WHERE 1=1 {base_where} {quote_where} {date_where}
+        """)
+
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+
+        offset = (page - 1) * per_page
+
+        data_query = text(f"""
+            SELECT t.ticker, a.name, a.exchange, a.type, a.currency,
+                   a.base_currency, a.quote_currency,
+                   o.id, o.date, o.open, o.high, o.low, o.close,
+                   o.adjusted_close, o.volume
+            FROM (VALUES {ticker_values}) AS t(ticker)
+            JOIN crypto_assets a ON a.code = t.ticker
+            JOIN ohlcv_data_crypto o ON o.ticker = t.ticker
+            WHERE 1=1 {base_where} {quote_where} {date_where}
+            ORDER BY {sort_col} {sort_dir}, t.ticker ASC
+            LIMIT {per_page} OFFSET {offset}
+        """)
+    else:
+        count_query = text(f"""
+            SELECT count(*)
+            FROM crypto_assets a
+            JOIN ohlcv_data_crypto o ON o.ticker = a.code
+            WHERE 1=1 {base_where} {quote_where} {date_where}
+        """)
+
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+
+        offset = (page - 1) * per_page
+
+        data_query = text(f"""
+            SELECT a.code AS ticker, a.name, a.exchange, a.type, a.currency,
+                   a.base_currency, a.quote_currency,
+                   o.id, o.date, o.open, o.high, o.low, o.close,
+                   o.adjusted_close, o.volume
+            FROM crypto_assets a
+            JOIN ohlcv_data_crypto o ON o.ticker = a.code
+            WHERE 1=1 {base_where} {quote_where} {date_where}
+            ORDER BY {sort_col} {sort_dir}, a.code ASC
+            LIMIT {per_page} OFFSET {offset}
+        """)
+
+    result = await db.execute(data_query)
+    rows = result.fetchall()
+
+    items = [
+        CryptoHistoryItem(
+            ticker=row.ticker,
+            name=row.name,
+            exchange=row.exchange,
+            type=row.type,
+            currency=row.currency,
+            base_currency=row.base_currency,
+            quote_currency=row.quote_currency,
+            date=row.date,
+            open=row.open,
+            high=row.high,
+            low=row.low,
+            close=row.close,
+            adjusted_close=row.adjusted_close,
+            volume=row.volume,
+        )
+        for row in rows
+    ]
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+
+    return CryptoHistoryPaginatedResponse(
+        data=items,
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+
+@app.get("/crypto/top100/", response_model=CryptoTop100Response)
+async def get_crypto_top100(
+    base_currency: Optional[str] = Query(None, description="Filter by base currency code (e.g., BTC, ETH)"),
+    quote_currency: Optional[str] = Query(None, description="Filter by quote currency code (e.g., USD, USDT)"),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the top 100 crypto assets by latest volume (descending).
+    Uses LATERAL join driven by crypto_assets for efficient per-ticker
+    latest-row lookups. Enriched with name, exchange, type, currency,
+    base_currency, quote_currency, and notional_value (close * volume).
+    """
+    base_where = ""
+    quote_where = ""
+    if base_currency:
+        base_where = f"AND a.base_currency = '{base_currency.upper()}'"
+    if quote_currency:
+        quote_where = f"AND a.quote_currency = '{quote_currency.upper()}'"
+
+    query = text(f"""
+        SELECT a.code AS ticker, a.name, a.exchange, a.type, a.currency,
+               a.base_currency, a.quote_currency,
+               o.date, o.open, o.high, o.low, o.close,
+               o.adjusted_close, o.volume,
+               (o.close * o.volume) AS notional_value
+        FROM crypto_assets a
+        CROSS JOIN LATERAL (
+            SELECT date, open, high, low, close, adjusted_close, volume
+            FROM ohlcv_data_crypto
+            WHERE ticker = a.code
+            ORDER BY date DESC
+            LIMIT 1
+        ) o
+        WHERE 1=1 {base_where} {quote_where}
+        ORDER BY o.volume DESC
+        LIMIT 100
+    """)
+
+    result = await db.execute(query)
+    rows = result.fetchall()
+
+    items = [
+        CryptoTop100Item(
+            ticker=row.ticker,
+            name=row.name,
+            exchange=row.exchange,
+            type=row.type,
+            currency=row.currency,
+            base_currency=row.base_currency,
+            quote_currency=row.quote_currency,
+            date=row.date,
+            open=row.open,
+            high=row.high,
+            low=row.low,
+            close=row.close,
+            adjusted_close=row.adjusted_close,
+            volume=row.volume,
+            notional_value=row.notional_value,
+        )
+        for row in rows
+    ]
+
+    return CryptoTop100Response(data=items, count=len(items))
+
+
 # ── UK Stock (LSE) Endpoints ─────────────────────────────────────────────
 
 @app.get("/uk/", response_model=UkPaginatedResponse)
@@ -3196,6 +3662,7 @@ ALLOWED_TABLES = {
     "ohlcv_data_fx", "fx_assets",
     "ohlcv_data_uk", "uk_assets", "ftse100_constituents",
     "ust_bill_rates", "ust_long_term_rates", "ust_real_yield_rates", "ust_yield_rates",
+    "ohlcv_data_crypto", "crypto_assets",
 }
 
 # Guardrail 3: Maximum rows returned
