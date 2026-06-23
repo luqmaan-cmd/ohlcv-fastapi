@@ -3902,6 +3902,377 @@ Used by: `GET /ust/yield/latest/`
 
 ---
 
+### CommodityOhlcvResponse
+
+Used by: `GET /commodity/`, nested inside `CommodityPaginatedResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `date` | date | Yes | Trading date |
+| `symbol` | string | Yes | Commodity symbol (e.g., `LGOc3`) |
+| `name` | string | Yes | Commodity name (e.g., `Crude Oil (WTI)`) |
+| `open` | decimal | No | Opening price |
+| `high` | decimal | No | Highest price |
+| `low` | decimal | No | Lowest price |
+| `close` | decimal | No | Closing price |
+| `adjusted_close` | decimal | No | Adjusted closing price |
+| `volume` | integer | No | Trading volume |
+| `category` | string | No | Commodity category (e.g., `Energy`, `Metals`) |
+| `ingestion_ts` | datetime | No | Record ingestion timestamp |
+
+### CommodityPaginatedResponse
+
+Used by: `GET /commodity/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[CommodityOhlcvResponse] | Yes | Array of commodity OHLCV records for the current page |
+| `total` | integer | Yes | Total number of matching records across all pages |
+| `page` | integer | Yes | Current page number |
+| `per_page` | integer | Yes | Number of records per page |
+| `total_pages` | integer | Yes | Total number of pages |
+| `has_next` | boolean | Yes | Whether a next page exists |
+| `has_prev` | boolean | Yes | Whether a previous page exists |
+
+### CommodityLatestItem
+
+Used by: `GET /commodity/latest/`, `GET /commodity/latest/{symbol}`, nested inside `CommodityLatestResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `symbol` | string | Yes | Commodity symbol (e.g., `LGOc3`) |
+| `name` | string | No | Commodity name (e.g., `Crude Oil (WTI)`) |
+| `category` | string | No | Commodity category (e.g., `Energy`, `Metals`) |
+| `date` | date | No | Trading date |
+| `open` | decimal | No | Opening price |
+| `high` | decimal | No | Highest price |
+| `low` | decimal | No | Lowest price |
+| `close` | decimal | No | Closing price |
+| `adjusted_close` | decimal | No | Adjusted closing price |
+| `volume` | integer | No | Trading volume |
+
+### CommodityLatestResponse
+
+Used by: `GET /commodity/latest/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[CommodityLatestItem] | Yes | Array of commodities with latest OHLCV data |
+| `count` | integer | Yes | Number of records returned |
+
+### CommoditySymbolItem
+
+Used by: nested inside `CommoditySymbolResponse`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `symbol` | string | Yes | Commodity symbol (e.g., `LGOc3`) |
+| `name` | string | No | Commodity name (e.g., `Crude Oil (WTI)`) |
+| `category` | string | No | Commodity category (e.g., `Energy`, `Metals`) |
+
+### CommoditySymbolResponse
+
+Used by: `GET /commodity/symbols/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[CommoditySymbolItem] | Yes | Array of commodity symbol metadata |
+| `count` | integer | Yes | Number of records returned |
+
+### CommodityCategoryResponse
+
+Used by: `GET /commodity/categories/`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `data` | list[string] | Yes | Array of distinct category names |
+| `count` | integer | Yes | Number of categories returned |
+
+---
+
+## Commodities Data
+
+Dedicated endpoints for commodity assets (Crude Oil, Natural Gas, Gold, Wheat, etc.) with embedded metadata (name, category). Supports filtering by `category` parameter (Energy, Metals, Grains, Softs, Livestock, Other).
+
+> **Case-sensitivity note:** Commodity symbols are **case-sensitive** and must be provided exactly as stored in the database (e.g., `LGOc3`, not `lgoc3`).
+
+### List Commodity OHLCV Data
+
+Returns paginated OHLCV records for commodities. Supports filtering by symbol(s), category, date range, and price/volume bounds.
+
+**Endpoint:** `GET /commodity/`
+
+#### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `symbol` | string | - | Single commodity symbol (e.g., `LGOc3`) |
+| `symbols` | string | - | Comma-separated commodity symbols (e.g., `LGOc3,NICKEL,GDK`) |
+| `category` | string | - | Filter by category (e.g., `Energy`, `Metals`, `Grains`, `Softs`, `Livestock`, `Other`) |
+| `start_date` | date | - | Start date filter (YYYY-MM-DD) |
+| `end_date` | date | - | End date filter (YYYY-MM-DD) |
+| `year` | integer | - | Filter by year (1900-2100) |
+| `month` | integer | - | Filter by month (1-12) |
+| `open_min` | decimal | - | Minimum open price |
+| `open_max` | decimal | - | Maximum open price |
+| `close_min` | decimal | - | Minimum close price |
+| `close_max` | decimal | - | Maximum close price |
+| `volume_min` | integer | - | Minimum volume |
+| `volume_max` | integer | - | Maximum volume |
+| `sort_by` | string | `date` | Sort field: `date`, `volume`, `close`, `open`, `high`, `low` |
+| `sort_order` | string | `desc` | Sort order: `asc`, `desc` |
+| `page` | integer | `1` | Page number (min: 1) |
+| `per_page` | integer | `1000` | Records per page (min: 1, max: 5000) |
+
+#### Example Request — Single Symbol
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/commodity/?api_key=YOUR_API_KEY&symbol=LGOc3&start_date=2026-05-01&end_date=2026-05-07&sort_by=date&sort_order=desc&page=1&per_page=5"
+```
+
+#### Example Request — Filter by Category
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/commodity/?api_key=YOUR_API_KEY&category=Energy&start_date=2026-05-01&end_date=2026-05-07&sort_by=date&sort_order=desc&page=1&per_page=5"
+```
+
+#### Example Response
+
+```json
+{
+  "data": [
+    {
+      "date": "2026-05-07",
+      "symbol": "LGOc3",
+      "name": "Crude Oil (WTI)",
+      "open": "78.5000",
+      "high": "79.2000",
+      "low": "77.8000",
+      "close": "78.9000",
+      "adjusted_close": "78.9000",
+      "volume": 456789,
+      "category": "Energy",
+      "ingestion_ts": "2026-05-08T02:00:00.000000"
+    }
+  ],
+  "total": 5,
+  "page": 1,
+  "per_page": 5,
+  "total_pages": 1,
+  "has_next": false,
+  "has_prev": false
+}
+```
+
+### Get Latest Commodity Data
+
+#### Single Commodity
+
+Returns the most recent OHLCV record for a single commodity, enriched with embedded metadata (name, category).
+
+**Endpoint:** `GET /commodity/latest/{symbol}`
+
+##### Path Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `symbol` | string | Commodity symbol (e.g., `LGOc3`). Case-sensitive. |
+
+##### Example Request
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/commodity/latest/LGOc3?api_key=YOUR_API_KEY"
+```
+
+##### Example Response
+
+```json
+{
+  "symbol": "LGOc3",
+  "name": "Crude Oil (WTI)",
+  "category": "Energy",
+  "date": "2026-05-13",
+  "open": "78.5000",
+  "high": "79.2000",
+  "low": "77.8000",
+  "close": "78.9000",
+  "adjusted_close": "78.9000",
+  "volume": 456789
+}
+```
+
+##### Error Response — Symbol Not Found
+
+```json
+{
+  "detail": "No commodity found with symbol: INVALID"
+}
+```
+
+#### Batch / All Commodities
+
+Returns the most recent OHLCV record for one or more commodities. If no symbols are specified, returns the latest record for **all** commodities. Uses `DISTINCT ON` for efficient per-symbol latest-row lookups.
+
+**Endpoint:** `GET /commodity/latest/`
+
+> **Note:** This endpoint must be called with the trailing slash. Without it, FastAPI will route the request to `GET /commodity/latest/{symbol}`.
+
+> **URL Pattern — Batch vs Single Symbol:**
+>
+> ✅ **Batch (specific symbols):** `GET /commodity/latest/?symbols=LGOc3,NICKEL,GDK`
+>
+> ✅ **Filter by category:** `GET /commodity/latest/?category=Energy`
+>
+> ✅ **All commodities:** `GET /commodity/latest/`
+>
+> ✅ **Single symbol (path param):** `GET /commodity/latest/LGOc3`
+>
+> ❌ **Wrong:** `GET /commodity/latest/LGOc3,NICKEL` — commas not allowed in path params
+
+##### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `symbols` | string | - | Comma-separated commodity symbols (e.g., `LGOc3,NICKEL,GDK`). If omitted, returns latest for all commodities. |
+| `category` | string | - | Filter by category (e.g., `Energy`, `Metals`) |
+
+##### Example Request — Specific Commodities
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/commodity/latest/?api_key=YOUR_API_KEY&symbols=LGOc3,NICKEL,GDK"
+```
+
+##### Example Response
+
+```json
+{
+  "data": [
+    {
+      "symbol": "GDK",
+      "name": "Gold",
+      "category": "Metals",
+      "date": "2026-05-13",
+      "open": "2345.6000",
+      "high": "2360.0000",
+      "low": "2340.0000",
+      "close": "2352.8000",
+      "adjusted_close": "2352.8000",
+      "volume": 123456
+    },
+    {
+      "symbol": "LGOc3",
+      "name": "Crude Oil (WTI)",
+      "category": "Energy",
+      "date": "2026-05-13",
+      "open": "78.5000",
+      "high": "79.2000",
+      "low": "77.8000",
+      "close": "78.9000",
+      "adjusted_close": "78.9000",
+      "volume": 456789
+    },
+    {
+      "symbol": "NICKEL",
+      "name": "Nickel",
+      "category": "Metals",
+      "date": "2026-05-13",
+      "open": "18250.0000",
+      "high": "18500.0000",
+      "low": "18100.0000",
+      "close": "18350.0000",
+      "adjusted_close": "18350.0000",
+      "volume": 7890
+    }
+  ],
+  "count": 3
+}
+```
+
+##### Example Request — Filter by Category
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/commodity/latest/?api_key=YOUR_API_KEY&category=Energy"
+```
+
+Returns the latest record for all commodities in the Energy category.
+
+##### Example Request — All Commodities
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/commodity/latest/?api_key=YOUR_API_KEY"
+```
+
+Returns the latest record for every commodity in the database.
+
+### List Commodity Symbols
+
+Returns all commodity symbols with their latest metadata (name, category). Useful for discovering available symbols.
+
+**Endpoint:** `GET /commodity/symbols/`
+
+#### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `api_key` | string | **Required** | API key for authentication |
+| `category` | string | - | Filter by category (e.g., `Energy`, `Metals`) |
+
+#### Example Request
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/commodity/symbols/?api_key=YOUR_API_KEY"
+```
+
+#### Example Response
+
+```json
+{
+  "data": [
+    {
+      "symbol": "GDK",
+      "name": "Gold",
+      "category": "Metals"
+    },
+    {
+      "symbol": "LGOc3",
+      "name": "Crude Oil (WTI)",
+      "category": "Energy"
+    },
+    {
+      "symbol": "NICKEL",
+      "name": "Nickel",
+      "category": "Metals"
+    }
+  ],
+  "count": 3
+}
+```
+
+### List Commodity Categories
+
+Returns all distinct commodity categories.
+
+**Endpoint:** `GET /commodity/categories/`
+
+#### Example Request
+
+```bash
+curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/commodity/categories/?api_key=YOUR_API_KEY"
+```
+
+#### Example Response
+
+```json
+{
+  "data": ["Energy", "Grains", "Livestock", "Metals", "Other", "Softs"],
+  "count": 6
+}
+```
+
+---
+
 ## Batch Query Patterns
 
 ### When to Use Which Endpoint Group
@@ -3936,6 +4307,10 @@ Used by: `GET /ust/yield/latest/`
 | Historical US Treasury real yield rates | `GET /ust/real-yield/` | Paginated with date and tenor filtering |
 | Latest US Treasury yield curve rates | `GET /ust/yield/latest/` | Returns latest rates for all 14 yield tenors |
 | Historical US Treasury yield curve rates | `GET /ust/yield/` | Paginated with date and tenor filtering |
+| Latest prices for commodities with metadata | `GET /commodity/latest/` | Enriched with name, category; supports category filtering |
+| Historical data for commodities | `GET /commodity/` | Paginated with symbol, category, date, and price/volume filtering |
+| Browse available commodity symbols | `GET /commodity/symbols/` | Metadata only: symbol, name, category; filterable by category |
+| List all commodity categories | `GET /commodity/categories/` | Returns all distinct categories |
 
 ### S&P 500 vs Plain OHLCV
 
@@ -4015,3 +4390,12 @@ The S&P 500 endpoints add two features the plain OHLCV endpoints don't provide:
 | `GET /ust/yield/` | `tenors=2-Year,10-Year,30-Year` | Paginated yield curve history | No |
 | `GET /ust/yield/latest/` | *(omit tenors)* | Latest for all 14 yield tenors | No |
 | `GET /ust/yield/latest/{tenor}` | — | Latest for a single yield tenor | No |
+| `GET /commodity/` | `symbols=LGOc3,NICKEL,GDK` | Paginated commodity history | No |
+| `GET /commodity/` | `category=Energy` | Paginated commodity history by category | No |
+| `GET /commodity/latest/` | `symbols=LGOc3,NICKEL,GDK` | Latest commodity OHLCV | Yes |
+| `GET /commodity/latest/` | `category=Energy` | Latest commodity OHLCV by category | Yes |
+| `GET /commodity/latest/` | *(omit symbols)* | Latest for all commodities | Yes |
+| `GET /commodity/latest/{symbol}` | — | Latest for a single commodity | Yes |
+| `GET /commodity/symbols/` | `category=Energy` | List commodity symbols by category | Yes |
+| `GET /commodity/symbols/` | *(omit category)* | List all commodity symbols | Yes |
+| `GET /commodity/categories/` | — | List all distinct categories | No |

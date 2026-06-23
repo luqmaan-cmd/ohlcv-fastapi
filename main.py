@@ -25,6 +25,7 @@ from models import (
     Ftse100Constituent,
     UstBillRate, UstLongTermRate, UstRealYieldRate, UstYieldRate,
     CryptoOhlcvData, CryptoAsset,
+    CommodityEOD,
 )
 from schemas import (
     OhlcvDataCreate, OhlcvDataUpdate, OhlcvDataResponse,
@@ -58,6 +59,10 @@ from schemas import (
     CryptoHistoryItem, CryptoHistoryPaginatedResponse,
     CryptoTop100Item, CryptoTop100Response,
     CryptoAssetItem, CryptoAssetResponse,
+    CommodityOhlcvResponse, CommodityPaginatedResponse,
+    CommodityLatestItem, CommodityLatestResponse,
+    CommoditySymbolItem, CommoditySymbolResponse,
+    CommodityCategoryResponse,
 )
 
 API_KEY = os.getenv("API_KEY", "ohlcv-api-key-2024-secure")
@@ -3709,7 +3714,247 @@ async def get_ust_yield_latest_single(
     )
 
 
-# ── SQL Query Endpoint ───────────────────────────────────────────────────────
+# --- Commodities ---
+
+@app.get("/commodity/", response_model=CommodityPaginatedResponse)
+async def get_commodity_ohlcv_data(
+    symbol: Optional[str] = Query(None, description="Single commodity symbol (e.g., LGOc3)"),
+    symbols: Optional[str] = Query(None, description="Comma-separated commodity symbols (e.g., LGOc3,NICKEL,GDK)"),
+    category: Optional[str] = Query(None, description="Filter by category (e.g., Energy, Metals, Grains, Softs, Livestock, Other)"),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    year: Optional[int] = Query(None, ge=1900, le=2100),
+    month: Optional[int] = Query(None, ge=1, le=12),
+    open_min: Optional[Decimal] = Query(None),
+    open_max: Optional[Decimal] = Query(None),
+    close_min: Optional[Decimal] = Query(None),
+    close_max: Optional[Decimal] = Query(None),
+    volume_min: Optional[int] = Query(None),
+    volume_max: Optional[int] = Query(None),
+    sort_by: Optional[str] = Query("date", pattern="^(date|volume|close|open|high|low)$"),
+    sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(1000, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    List paginated OHLCV data for commodities.
+    Supports filtering by symbol(s), category, date range, and price/volume bounds.
+    """
+    symbol_list = parse_comma_separated_preserve(symbols) or ([symbol] if symbol else None)
+
+    query = select(CommodityEOD)
+    count_query = select(func.count()).select_from(CommodityEOD)
+
+    if symbol_list:
+        if len(symbol_list) == 1:
+            query = query.where(CommodityEOD.symbol == symbol_list[0])
+            count_query = count_query.where(CommodityEOD.symbol == symbol_list[0])
+        else:
+            query = query.where(CommodityEOD.symbol.in_(symbol_list))
+            count_query = count_query.where(CommodityEOD.symbol.in_(symbol_list))
+
+    if category:
+        query = query.where(CommodityEOD.category == category)
+        count_query = count_query.where(CommodityEOD.category == category)
+
+    if start_date:
+        query = query.where(CommodityEOD.date >= start_date)
+        count_query = count_query.where(CommodityEOD.date >= start_date)
+    if end_date:
+        query = query.where(CommodityEOD.date <= end_date)
+        count_query = count_query.where(CommodityEOD.date <= end_date)
+    if year:
+        query = query.where(func.extract("year", CommodityEOD.date) == year)
+        count_query = count_query.where(func.extract("year", CommodityEOD.date) == year)
+    if month:
+        query = query.where(func.extract("month", CommodityEOD.date) == month)
+        count_query = count_query.where(func.extract("month", CommodityEOD.date) == month)
+    if open_min is not None:
+        query = query.where(CommodityEOD.open >= open_min)
+        count_query = count_query.where(CommodityEOD.open >= open_min)
+    if open_max is not None:
+        query = query.where(CommodityEOD.open <= open_max)
+        count_query = count_query.where(CommodityEOD.open <= open_max)
+    if close_min is not None:
+        query = query.where(CommodityEOD.close >= close_min)
+        count_query = count_query.where(CommodityEOD.close >= close_min)
+    if close_max is not None:
+        query = query.where(CommodityEOD.close <= close_max)
+        count_query = count_query.where(CommodityEOD.close <= close_max)
+    if volume_min is not None:
+        query = query.where(CommodityEOD.volume >= volume_min)
+        count_query = count_query.where(CommodityEOD.volume >= volume_min)
+    if volume_max is not None:
+        query = query.where(CommodityEOD.volume <= volume_max)
+        count_query = count_query.where(CommodityEOD.volume <= volume_max)
+
+    sort_column = getattr(CommodityEOD, sort_by or "date")
+    query = query.order_by(sort_column.desc() if sort_order == "desc" else sort_column.asc())
+
+    offset = (page - 1) * per_page
+    query = query.offset(offset).limit(per_page)
+
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    result = await db.execute(query)
+    data = result.scalars().all()
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+
+    return CommodityPaginatedResponse(
+        data=data,  # type: ignore[arg-type]
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+
+@app.get("/commodity/latest/", response_model=CommodityLatestResponse)
+async def get_commodity_latest_batch(
+    symbols: Optional[str] = Query(None, description="Comma-separated commodity symbols (e.g., LGOc3,NICKEL,GDK). If omitted, returns latest for all commodities."),
+    category: Optional[str] = Query(None, description="Filter by category (e.g., Energy, Metals)"),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest OHLCV record for commodities.
+    Uses DISTINCT ON for efficient per-symbol latest-row lookups.
+    Optionally filter by specific symbols and/or category.
+    """
+    symbol_list = parse_comma_separated_preserve(symbols)
+
+    category_clause = f"AND category = '{category}'" if category else ""
+
+    if symbol_list:
+        symbol_values = ", ".join(f"'{s}'" for s in symbol_list)
+        query = text(f"""
+            SELECT DISTINCT ON (symbol) symbol, name, category,
+                   date, open, high, low, close, adjusted_close, volume
+            FROM commodities_eod
+            WHERE symbol IN ({symbol_values}) {category_clause}
+            ORDER BY symbol, date DESC
+        """)
+    else:
+        query = text(f"""
+            SELECT DISTINCT ON (symbol) symbol, name, category,
+                   date, open, high, low, close, adjusted_close, volume
+            FROM commodities_eod
+            WHERE 1=1 {category_clause}
+            ORDER BY symbol, date DESC
+        """)
+
+    result = await db.execute(query)
+    rows = result.fetchall()
+
+    items = [
+        CommodityLatestItem(
+            symbol=row.symbol,
+            name=row.name,
+            category=row.category,
+            date=row.date,
+            open=row.open,
+            high=row.high,
+            low=row.low,
+            close=row.close,
+            adjusted_close=row.adjusted_close,
+            volume=row.volume,
+        )
+        for row in rows
+    ]
+
+    return CommodityLatestResponse(data=items, count=len(items))
+
+
+@app.get("/commodity/latest/{symbol}", response_model=CommodityLatestItem)
+async def get_commodity_latest_single(
+    symbol: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns the latest OHLCV record for a single commodity,
+    enriched with embedded metadata (name, category).
+    """
+    query = select(CommodityEOD).where(
+        CommodityEOD.symbol == symbol
+    ).order_by(CommodityEOD.date.desc()).limit(1)
+
+    result = await db.execute(query)
+    row = result.scalar_one_or_none()
+
+    if not row:
+        raise HTTPException(status_code=404, detail=f"No commodity found with symbol: {symbol}")
+
+    return CommodityLatestItem(
+        symbol=row.symbol,          # type: ignore[arg-type]
+        name=row.name,              # type: ignore[arg-type]
+        category=row.category,      # type: ignore[arg-type]
+        date=row.date,              # type: ignore[arg-type]
+        open=row.open,              # type: ignore[arg-type]
+        high=row.high,              # type: ignore[arg-type]
+        low=row.low,                # type: ignore[arg-type]
+        close=row.close,            # type: ignore[arg-type]
+        adjusted_close=row.adjusted_close,  # type: ignore[arg-type]
+        volume=row.volume,          # type: ignore[arg-type]
+    )
+
+
+@app.get("/commodity/symbols/", response_model=CommoditySymbolResponse)
+async def get_commodity_symbols(
+    category: Optional[str] = Query(None, description="Filter by category (e.g., Energy, Metals)"),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns all commodity symbols with their latest metadata (name, category).
+    """
+    category_clause = f"AND category = '{category}'" if category else ""
+
+    query = text(f"""
+        SELECT DISTINCT ON (symbol) symbol, name, category
+        FROM commodities_eod
+        WHERE 1=1 {category_clause}
+        ORDER BY symbol, date DESC
+    """)
+
+    result = await db.execute(query)
+    rows = result.fetchall()
+
+    items = [
+        CommoditySymbolItem(
+            symbol=row.symbol,
+            name=row.name,
+            category=row.category,
+        )
+        for row in rows
+    ]
+
+    return CommoditySymbolResponse(data=items, count=len(items))
+
+
+@app.get("/commodity/categories/", response_model=CommodityCategoryResponse)
+async def get_commodity_categories(
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns all distinct commodity categories.
+    """
+    query = select(CommodityEOD.category).distinct().where(
+        CommodityEOD.category.isnot(None)
+    ).order_by(CommodityEOD.category.asc())
+
+    result = await db.execute(query)
+    categories = [row[0] for row in result.fetchall()]
+
+    return CommodityCategoryResponse(data=categories, count=len(categories))
+
 
 # Guardrail 1: Only SELECT statements are allowed
 _SELECT_KEYWORDS = {"SELECT", "WITH"}
@@ -3737,6 +3982,7 @@ ALLOWED_TABLES = {
     "ohlcv_data_uk", "uk_assets", "ftse100_constituents",
     "ust_bill_rates", "ust_long_term_rates", "ust_real_yield_rates", "ust_yield_rates",
     "ohlcv_data_crypto", "crypto_assets",
+    "commodities_eod",
 }
 
 # Guardrail 3: Maximum rows returned

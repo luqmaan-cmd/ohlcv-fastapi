@@ -790,3 +790,73 @@ class CryptoAssetResponse(BaseModel):
     total_pages: int
     has_next: bool
     has_prev: bool
+
+
+# ── Commodities Schemas ──────────────────────────────────────────────────────
+
+class CommodityOhlcvResponse(BaseModel):
+    """Single OHLCV record from commodities_eod."""
+    date: date_type
+    symbol: str
+    name: str
+    open: Optional[Decimal] = None
+    high: Optional[Decimal] = None
+    low: Optional[Decimal] = None
+    close: Optional[Decimal] = None
+    adjusted_close: Optional[Decimal] = None
+    volume: Optional[int] = None
+    category: Optional[str] = None
+    ingestion_ts: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CommodityPaginatedResponse(BaseModel):
+    """Paginated list of commodity OHLCV records."""
+    data: List[CommodityOhlcvResponse]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class CommodityLatestItem(BaseModel):
+    """Single commodity with latest OHLCV data, enriched with embedded metadata."""
+    symbol: str
+    name: Optional[str] = None
+    category: Optional[str] = None
+    date: Optional[date_type] = None
+    open: Optional[Decimal] = None
+    high: Optional[Decimal] = None
+    low: Optional[Decimal] = None
+    close: Optional[Decimal] = None
+    adjusted_close: Optional[Decimal] = None
+    volume: Optional[int] = None
+
+
+class CommodityLatestResponse(BaseModel):
+    """Latest OHLCV for commodities."""
+    data: List[CommodityLatestItem]
+    count: int
+
+
+class CommoditySymbolItem(BaseModel):
+    """Single commodity symbol metadata."""
+    symbol: str
+    name: Optional[str] = None
+    category: Optional[str] = None
+
+
+class CommoditySymbolResponse(BaseModel):
+    """List of all commodity symbols."""
+    data: List[CommoditySymbolItem]
+    count: int
+
+
+class CommodityCategoryResponse(BaseModel):
+    """List of all commodity categories."""
+    data: List[str]
+    count: int

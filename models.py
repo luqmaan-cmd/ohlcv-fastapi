@@ -269,3 +269,19 @@ class CryptoAsset(Base):
     currency = Column(String(10))
     created_at = Column(DateTime)
     updated_at = Column(DateTime)
+
+
+class CommodityEOD(Base):
+    __tablename__ = "commodities_eod"
+
+    date = Column(Date, primary_key=True)
+    symbol = Column(String(20), primary_key=True)
+    name = Column(String(100), nullable=False)
+    open = Column(Numeric(18, 4))
+    high = Column(Numeric(18, 4))
+    low = Column(Numeric(18, 4))
+    close = Column(Numeric(18, 4))
+    adjusted_close = Column(Numeric(18, 4))
+    volume = Column(BigInteger)
+    category = Column(String(50))
+    ingestion_ts = Column(DateTime)
