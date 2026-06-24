@@ -52,7 +52,10 @@ uvicorn main:app --host 0.0.0.0 --port 8001
 All "latest" and "history" endpoints support batch queries via the `tickers` query parameter. Instead of making N requests for N companies, make one:
 
 ```bash
-# Latest OHLCV for 3 companies — one request
+# Latest close from DB for 3 companies — one request
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/latest_close/?tickers=AAPL,MSFT,GOOGL&api_key=YOUR_KEY"
+
+# Real-time OHLCV from EODHD for 3 companies — one request
 curl "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/latest/?tickers=AAPL,MSFT,GOOGL&api_key=YOUR_KEY"
 
 # Latest S&P 500 data for specific companies — enriched with name, sector, weight
@@ -64,20 +67,29 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/history/?tickers
 # Historical OHLCV for multiple tickers (non-S&P 500)
 curl "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/?tickers=AAPL,MSFT,GOOGL&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
 
-# Latest OHLCV for specific ETFs — enriched with name, exchange, ISIN, currency
+# Latest close from DB for specific ETFs — enriched with name, exchange, ISIN, currency
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/etf/latest_close/?tickers=SPY,QQQ,IWM&api_key=YOUR_KEY"
+
+# Real-time ETF OHLCV from EODHD
 curl "https://ohlcv-api-832081557693.europe-west2.run.app/etf/latest/?tickers=SPY,QQQ,IWM&api_key=YOUR_KEY"
 
-# Latest OHLCV for specific indices
+# Latest close from DB for specific indices
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/index/latest_close/?tickers=GSPC,DJI,IXIC&api_key=YOUR_KEY"
+
+# Real-time index OHLCV from EODHD
 curl "https://ohlcv-api-832081557693.europe-west2.run.app/index/latest/?tickers=GSPC,DJI,IXIC&api_key=YOUR_KEY"
 
 # Historical OHLCV for ETFs with date range
 curl "https://ohlcv-api-832081557693.europe-west2.run.app/etf/?tickers=SPY,QQQ&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
 
-# Latest OHLCV for specific government bonds — enriched with name, exchange, type, currency, country
+# Latest close from DB for specific government bonds — enriched with name, exchange, type, currency, country
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest_close/?tickers=US10Y,UK10Y,DE10Y&api_key=YOUR_KEY"
+
+# Real-time government bond OHLCV from EODHD
 curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest/?tickers=US10Y,UK10Y,DE10Y&api_key=YOUR_KEY"
 
-# Latest OHLCV for all government bonds from specific countries
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest/?countries=US,DE,JP&api_key=YOUR_KEY"
+# Latest close from DB for all government bonds from specific countries
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest_close/?countries=US,DE,JP&api_key=YOUR_KEY"
 
 # Historical OHLCV for government bonds with date range
 curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/?tickers=US10Y,UK10Y&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
@@ -102,27 +114,53 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/?tenor=10Y&s
 
 | Endpoint | Batch Parameter | Returns | Enriched |
 |----------|----------------|---------|----------|
-| `GET /ohlcv/latest/` | `tickers=AAPL,MSFT,GOOGL` | Latest OHLCV per ticker | No |
-| `GET /ohlcv/latest/` | *(omit tickers)* | Latest for all ~12,500 tickers | No |
+| `GET /ohlcv/latest_close/` | `tickers=AAPL,MSFT,GOOGL` | Latest close per ticker (DB) | No |
+| `GET /ohlcv/latest_close/` | *(omit tickers)* | Latest close for all ~12,500 tickers (DB) | No |
+| `GET /ohlcv/latest/` | `tickers=AAPL,MSFT,GOOGL` | Real-time OHLCV from EODHD | No |
+| `GET /ohlcv/latest/{ticker}` | — | Real-time OHLCV from EODHD for a single ticker | No |
 | `GET /ohlcv/` | `tickers=AAPL,MSFT,GOOGL` | Paginated history per ticker | No |
 | `GET /sp500/latest/` | `tickers=AAPL,MSFT,GOOGL` | Latest S&P 500 OHLCV | Yes |
 | `GET /sp500/latest/` | *(omit tickers)* | Latest for all 503 constituents | Yes |
 | `GET /sp500/history/` | `tickers=AAPL,MSFT,GOOGL` | Paginated S&P 500 history | Yes |
 | `GET /sp500/history/` | *(omit tickers)* | Paginated history for all active constituents | Yes |
 | `GET /etf/` | `tickers=SPY,QQQ,IWM` | Paginated ETF history | No |
-| `GET /etf/latest/` | `tickers=SPY,QQQ,IWM` | Latest ETF OHLCV | Yes |
-| `GET /etf/latest/` | *(omit tickers)* | Latest for all ETFs | Yes |
-| `GET /etf/latest/{ticker}` | — | Latest for a single ETF | Yes |
+| `GET /etf/latest_close/` | `tickers=SPY,QQQ,IWM` | Latest ETF close (DB) | Yes |
+| `GET /etf/latest_close/` | *(omit tickers)* | Latest close for all ETFs (DB) | Yes |
+| `GET /etf/latest_close/{ticker}` | — | Latest close for a single ETF (DB) | Yes |
+| `GET /etf/latest/` | `tickers=SPY,QQQ,IWM` | Real-time ETF OHLCV from EODHD | No |
+| `GET /etf/latest/{ticker}` | — | Real-time ETF OHLCV from EODHD for a single ETF | No |
 | `GET /index/` | `tickers=GSPC,DJI,IXIC` | Paginated index history | No |
-| `GET /index/latest/` | `tickers=GSPC,DJI,IXIC` | Latest index OHLCV | Yes |
-| `GET /index/latest/` | *(omit tickers)* | Latest for all indices | Yes |
-| `GET /index/latest/{ticker}` | — | Latest for a single index | Yes |
+| `GET /index/latest_close/` | `tickers=GSPC,DJI,IXIC` | Latest index close (DB) | Yes |
+| `GET /index/latest_close/` | *(omit tickers)* | Latest close for all indices (DB) | Yes |
+| `GET /index/latest_close/{ticker}` | — | Latest close for a single index (DB) | Yes |
+| `GET /index/latest/` | `tickers=GSPC,DJI,IXIC` | Real-time index OHLCV from EODHD | No |
+| `GET /index/latest/{ticker}` | — | Real-time index OHLCV from EODHD for a single index | No |
 | `GET /gov-bond/` | `tickers=US10Y,UK10Y,DE10Y` | Paginated gov bond history | No |
 | `GET /gov-bond/` | `countries=US,DE,JP` | Paginated gov bond history by country | No |
-| `GET /gov-bond/latest/` | `tickers=US10Y,UK10Y,DE10Y` | Latest gov bond OHLCV | Yes |
-| `GET /gov-bond/latest/` | `countries=US,DE,JP` | Latest gov bond OHLCV by country | Yes |
-| `GET /gov-bond/latest/` | *(omit tickers)* | Latest for all 117 gov bonds | Yes |
-| `GET /gov-bond/latest/{ticker}` | — | Latest for a single gov bond | Yes |
+| `GET /gov-bond/latest_close/` | `tickers=US10Y,UK10Y,DE10Y` | Latest gov bond close (DB) | Yes |
+| `GET /gov-bond/latest_close/` | `countries=US,DE,JP` | Latest gov bond close by country (DB) | Yes |
+| `GET /gov-bond/latest_close/` | *(omit tickers)* | Latest close for all 117 gov bonds (DB) | Yes |
+| `GET /gov-bond/latest_close/{ticker}` | — | Latest close for a single gov bond (DB) | Yes |
+| `GET /gov-bond/latest/` | `tickers=US10Y,UK10Y,DE10Y` | Real-time gov bond OHLCV from EODHD | No |
+| `GET /gov-bond/latest/{ticker}` | — | Real-time gov bond OHLCV from EODHD for a single bond | No |
+| `GET /fx/` | `tickers=EURUSD,GBPUSD,USDJPY` | Paginated FX history | No |
+| `GET /fx/latest_close/` | `tickers=EURUSD,GBPUSD,USDJPY` | Latest FX close (DB) | Yes |
+| `GET /fx/latest_close/` | *(omit tickers)* | Latest close for all FX pairs (DB) | Yes |
+| `GET /fx/latest_close/{ticker}` | — | Latest close for a single FX pair (DB) | Yes |
+| `GET /fx/latest/` | `tickers=EURUSD,GBPUSD,USDJPY` | Real-time FX OHLCV from EODHD | No |
+| `GET /fx/latest/{ticker}` | — | Real-time FX OHLCV from EODHD for a single pair | No |
+| `GET /uk/` | `tickers=AZN,SHEL,HSBA` | Paginated UK stock history | No |
+| `GET /uk/latest_close/` | `tickers=AZN,SHEL,HSBA` | Latest UK stock close (DB) | Yes |
+| `GET /uk/latest_close/` | *(omit tickers)* | Latest close for all UK stocks (DB) | Yes |
+| `GET /uk/latest_close/{ticker}` | — | Latest close for a single UK stock (DB) | Yes |
+| `GET /uk/latest/` | `tickers=AZN,SHEL,HSBA` | Real-time UK stock OHLCV from EODHD | No |
+| `GET /uk/latest/{ticker}` | — | Real-time UK stock OHLCV from EODHD for a single stock | No |
+| `GET /crypto/` | `tickers=BTC-USD,ETH-USD,SOL-USD` | Paginated crypto history | No |
+| `GET /crypto/latest_close/` | `tickers=BTC-USD,ETH-USD,SOL-USD` | Latest crypto close (DB) | Yes |
+| `GET /crypto/latest_close/` | *(omit tickers)* | Latest close for all crypto assets (DB) | Yes |
+| `GET /crypto/latest_close/{ticker}` | — | Latest close for a single crypto asset (DB) | Yes |
+| `GET /crypto/latest/` | `tickers=BTC-USD,ETH-USD,SOL-USD` | Real-time crypto OHLCV from EODHD | No |
+| `GET /crypto/latest/{ticker}` | — | Real-time crypto OHLCV from EODHD for a single asset | No |
 | `GET /ust/bill/` | `tenor=13WK` or `tenors=4WK,13WK,26WK` | Paginated bill rate history | No |
 | `GET /ust/bill/latest/` | `tenors=4WK,13WK,26WK` | Latest bill rates per tenor | No |
 | `GET /ust/bill/latest/` | *(omit tenors)* | Latest for all 7 bill tenors | No |
@@ -285,8 +323,10 @@ See [DEVELOPER.md](./DEVELOPER.md) for full documentation including CTE examples
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/ohlcv/` | List OHLCV data with filters (supports batch `tickers`) |
-| GET | `/ohlcv/latest/` | Batch get latest records (specific tickers or all) |
-| GET | `/ohlcv/latest/{ticker}` | Get latest record for a single ticker |
+| GET | `/ohlcv/latest_close/` | Batch get latest close from DB (specific tickers or all) |
+| GET | `/ohlcv/latest_close/{ticker}` | Get latest close from DB for a single ticker |
+| GET | `/ohlcv/latest/` | Batch get real-time OHLCV from EODHD (requires `tickers`) |
+| GET | `/ohlcv/latest/{ticker}` | Get real-time OHLCV from EODHD for a single ticker |
 | GET | `/ohlcv/stats/{ticker}` | Get statistics for a ticker (52-week high/low) |
 | GET | `/tickers/` | List all ~12,500 tickers |
 | GET | `/ohlcv/{id}` | Get record by UUID |
@@ -308,27 +348,34 @@ See [DEVELOPER.md](./DEVELOPER.md) for full documentation including CTE examples
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/etf/` | List ETF OHLCV data with filters (supports batch `tickers`) |
-| GET | `/etf/latest/` | Batch get latest ETF records (specific tickers or all) |
-| GET | `/etf/latest/{ticker}` | Get latest record for a single ETF |
+| GET | `/etf/latest_close/` | Batch get latest ETF close from DB (specific tickers or all) |
+| GET | `/etf/latest_close/{ticker}` | Get latest ETF close from DB for a single ETF |
+| GET | `/etf/latest/` | Batch get real-time ETF OHLCV from EODHD (requires `tickers`) |
+| GET | `/etf/latest/{ticker}` | Get real-time ETF OHLCV from EODHD for a single ETF |
 
 ### Index Data
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/index/` | List index OHLCV data with filters (supports batch `tickers`) |
-| GET | `/index/latest/` | Batch get latest index records (specific tickers or all) |
-| GET | `/index/latest/{ticker}` | Get latest record for a single index |
+| GET | `/index/latest_close/` | Batch get latest index close from DB (specific tickers or all) |
+| GET | `/index/latest_close/{ticker}` | Get latest index close from DB for a single index |
+| GET | `/index/latest/` | Batch get real-time index OHLCV from EODHD (requires `tickers`) |
+| GET | `/index/latest/{ticker}` | Get real-time index OHLCV from EODHD for a single index |
 
 ### Government Bond Data
 
 Dedicated endpoints for government bonds (US10Y, UK10Y, DE10Y…) with enriched metadata (name, exchange, type, currency, country). Supports country filtering via `country` (single) and `countries` (comma-separated) parameters.
 
 ```bash
-# Latest OHLCV for specific government bonds — enriched with name, exchange, type, currency, country
+# Latest close from DB for specific government bonds — enriched with name, exchange, type, currency, country
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest_close/?tickers=US10Y,UK10Y,DE10Y&api_key=YOUR_KEY"
+
+# Real-time government bond OHLCV from EODHD
 curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest/?tickers=US10Y,UK10Y,DE10Y&api_key=YOUR_KEY"
 
-# Latest OHLCV for all government bonds from specific countries
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest/?countries=US,DE,JP&api_key=YOUR_KEY"
+# Latest close from DB for all government bonds from specific countries
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest_close/?countries=US,DE,JP&api_key=YOUR_KEY"
 
 # Historical OHLCV for government bonds with date range
 curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/?tickers=US10Y,UK10Y&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
@@ -340,8 +387,74 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/?countries=US
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/gov-bond/` | List gov bond OHLCV data with filters (supports batch `tickers`, `country`/`countries`) |
-| GET | `/gov-bond/latest/` | Batch get latest gov bond records (specific tickers, countries, or all) |
-| GET | `/gov-bond/latest/{ticker}` | Get latest record for a single government bond |
+| GET | `/gov-bond/latest_close/` | Batch get latest gov bond close from DB (specific tickers, countries, or all) |
+| GET | `/gov-bond/latest_close/{ticker}` | Get latest gov bond close from DB for a single government bond |
+| GET | `/gov-bond/latest/` | Batch get real-time gov bond OHLCV from EODHD (requires `tickers`) |
+| GET | `/gov-bond/latest/{ticker}` | Get real-time gov bond OHLCV from EODHD for a single bond |
+
+### Foreign Exchange (FX) Data
+
+Dedicated endpoints for foreign exchange pairs (EURUSD, GBPUSD, USDJPY…) with enriched metadata (name, exchange, type, currency, base_currency, quote_currency).
+
+```bash
+# Latest close from DB for specific FX pairs
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/fx/latest_close/?tickers=EURUSD,GBPUSD,USDJPY&api_key=YOUR_KEY"
+
+# Real-time FX OHLCV from EODHD
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/fx/latest/?tickers=EURUSD,GBPUSD,USDJPY&api_key=YOUR_KEY"
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/fx/` | List FX OHLCV data with filters (supports batch `tickers`, `base_currency`, `quote_currency`) |
+| GET | `/fx/latest_close/` | Batch get latest FX close from DB (specific tickers or all) |
+| GET | `/fx/latest_close/{ticker}` | Get latest FX close from DB for a single pair |
+| GET | `/fx/latest/` | Batch get real-time FX OHLCV from EODHD (requires `tickers`) |
+| GET | `/fx/latest/{ticker}` | Get real-time FX OHLCV from EODHD for a single pair |
+
+### UK Stock (LSE) Data
+
+Dedicated endpoints for UK stocks listed on the London Stock Exchange (LSE) with enriched metadata (name, exchange, type, sector, industry, isin, currency).
+
+> **Note:** UK tickers are **case-sensitive** (e.g., `AZN`, not `azn`).
+
+```bash
+# Latest close from DB for specific UK stocks
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/uk/latest_close/?tickers=AZN,SHEL,HSBA&api_key=YOUR_KEY"
+
+# Real-time UK stock OHLCV from EODHD
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/uk/latest/?tickers=AZN,SHEL,HSBA&api_key=YOUR_KEY"
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/uk/` | List UK stock OHLCV data with filters (supports batch `tickers`, `sector`, `industry`) |
+| GET | `/uk/latest_close/` | Batch get latest UK stock close from DB (specific tickers or all) |
+| GET | `/uk/latest_close/{ticker}` | Get latest UK stock close from DB for a single stock |
+| GET | `/uk/latest/` | Batch get real-time UK stock OHLCV from EODHD (requires `tickers`) |
+| GET | `/uk/latest/{ticker}` | Get real-time UK stock OHLCV from EODHD for a single stock |
+
+### Crypto Data
+
+Dedicated endpoints for cryptocurrency assets (BTC-USD, ETH-USD, SOL-USD…) with enriched metadata (name, exchange, type, currency, base_currency, quote_currency).
+
+> **Note:** Crypto tickers are **case-sensitive** (e.g., `BTC-USD`, not `btc-usd`).
+
+```bash
+# Latest close from DB for specific crypto assets
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/crypto/latest_close/?tickers=BTC-USD,ETH-USD,SOL-USD&api_key=YOUR_KEY"
+
+# Real-time crypto OHLCV from EODHD
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/crypto/latest/?tickers=BTC-USD,ETH-USD,SOL-USD&api_key=YOUR_KEY"
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/crypto/` | List crypto OHLCV data with filters (supports batch `tickers`, `base_currency`, `quote_currency`) |
+| GET | `/crypto/latest_close/` | Batch get latest crypto close from DB (specific tickers or all) |
+| GET | `/crypto/latest_close/{ticker}` | Get latest crypto close from DB for a single asset |
+| GET | `/crypto/latest/` | Batch get real-time crypto OHLCV from EODHD (requires `tickers`) |
+| GET | `/crypto/latest/{ticker}` | Get real-time crypto OHLCV from EODHD for a single asset |
 
 ### US Treasury Rate Data
 
@@ -431,6 +544,7 @@ The application reads configuration from GCP Secret Manager. The following secre
 | `db-name` | Database name |
 | `db-password` | Database password |
 | `api-key` | API key for authentication |
+| `eodhd-api-token` | EODHD API token for real-time OHLCV endpoints |
 
 ### Environment Variables (Local Development)
 
@@ -444,3 +558,4 @@ The application reads configuration from GCP Secret Manager. The following secre
 | DB_POOL_SIZE | Connection pool size | 10 |
 | DB_MAX_OVERFLOW | Max overflow connections | 5 |
 | DB_ECHO | SQL echo mode | false |
+| EODHD_API_TOKEN | EODHD API token for real-time OHLCV endpoints | Required |

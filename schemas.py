@@ -860,3 +860,25 @@ class CommodityCategoryResponse(BaseModel):
     """List of all commodity categories."""
     data: List[str]
     count: int
+
+
+# ── Real-Time OHLCV (EODHD) Schemas ─────────────────────────────────────────
+
+class RealTimeOhlcvItem(BaseModel):
+    """Single real-time OHLCV record fetched from EODHD."""
+    ticker: str
+    exchange: Optional[str] = None
+    timestamp: Optional[int] = None
+    datetime: Optional[_dt.datetime] = None
+    open: Optional[Decimal] = None
+    high: Optional[Decimal] = None
+    low: Optional[Decimal] = None
+    close: Optional[Decimal] = None
+    adjusted_close: Optional[Decimal] = None
+    volume: Optional[int] = None
+
+
+class RealTimeOhlcvResponse(BaseModel):
+    """Batch real-time OHLCV response from EODHD."""
+    data: List[RealTimeOhlcvItem]
+    count: int

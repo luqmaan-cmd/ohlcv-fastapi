@@ -15,6 +15,8 @@ import re
 import asyncio
 import logging
 
+import httpx
+
 from database import get_db, engine as async_engine
 from models import (
     OhlcvData, SP500Constituent, Asset, TickerAlias, Ticker,
@@ -63,9 +65,13 @@ from schemas import (
     CommodityLatestItem, CommodityLatestResponse,
     CommoditySymbolItem, CommoditySymbolResponse,
     CommodityCategoryResponse,
+    RealTimeOhlcvItem, RealTimeOhlcvResponse,
 )
 
 API_KEY = os.getenv("API_KEY", "ohlcv-api-key-2024-secure")
+EODHD_API_TOKEN = os.getenv("EODHD_API_TOKEN", "")
+EODHD_BASE_URL = "https://eodhd.com/api/real-time"
+EODHD_TIMEOUT_S = 15
 
 api_key_query = APIKeyQuery(name="api_key", auto_error=False)
 
@@ -76,6 +82,90 @@ async def verify_api_key(api_key: str = Security(api_key_query)):
     return api_key
 
 logger = logging.getLogger("ohlcv-api")
+
+
+async def fetch_eodhd_realtime(ticker: str, exchange: str) -> dict:
+    """Fetch a single real-time quote from EODHD for {ticker}.{exchange}."""
+    symbol = f"{ticker}.{exchange}"
+    url = f"{EODHD_BASE_URL}/{symbol}"
+    params = {"api_token": EODHD_API_TOKEN, "fmt": "json"}
+    try:
+        async with httpx.AsyncClient(timeout=EODHD_TIMEOUT_S) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            close_val = data.get("close")
+            if not data or close_val is None or close_val == "NA":
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No real-time data found for {symbol}",
+                )
+            return data
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504,
+            detail=f"EODHD request timed out for {symbol}",
+        )
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"EODHD returned {exc.response.status_code} for {symbol}",
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"EODHD request failed for {symbol}: {exc}",
+        )
+
+
+def _clean_eodhd_val(val):
+    """Return None for EODHD 'NA' placeholders, otherwise the raw value."""
+    if val is None or val == "NA":
+        return None
+    return val
+
+
+def parse_eodhd_response(data: dict, ticker: str, exchange: str) -> RealTimeOhlcvItem:
+    """Map EODHD JSON response to RealTimeOhlcvItem."""
+    ts_raw = _clean_eodhd_val(data.get("timestamp"))
+    gmt_offset = _clean_eodhd_val(data.get("gmtoffset")) or 0
+    dt = None
+    if ts_raw is not None:
+        dt = datetime.utcfromtimestamp(ts_raw + gmt_offset) if gmt_offset else datetime.utcfromtimestamp(ts_raw)
+    return RealTimeOhlcvItem(
+        ticker=ticker,
+        exchange=exchange,
+        timestamp=ts_raw,
+        datetime=dt,
+        open=Decimal(str(_clean_eodhd_val(data.get("open")))) if _clean_eodhd_val(data.get("open")) is not None else None,
+        high=Decimal(str(_clean_eodhd_val(data.get("high")))) if _clean_eodhd_val(data.get("high")) is not None else None,
+        low=Decimal(str(_clean_eodhd_val(data.get("low")))) if _clean_eodhd_val(data.get("low")) is not None else None,
+        close=Decimal(str(_clean_eodhd_val(data.get("close")))) if _clean_eodhd_val(data.get("close")) is not None else None,
+        adjusted_close=Decimal(str(_clean_eodhd_val(data.get("adjusted_close")))) if _clean_eodhd_val(data.get("adjusted_close")) is not None else None,
+        volume=_clean_eodhd_val(data.get("volume")),
+    )
+
+
+async def fetch_eodhd_realtime_batch(
+    ticker_exchange_pairs: list[tuple[str, str]],
+) -> list[RealTimeOhlcvItem]:
+    """Fetch real-time quotes for multiple tickers concurrently."""
+    async def _fetch_one(ticker: str, exchange: str) -> RealTimeOhlcvItem:
+        data = await fetch_eodhd_realtime(ticker, exchange)
+        return parse_eodhd_response(data, ticker, exchange)
+
+    results = await asyncio.gather(
+        *(_fetch_one(t, e) for t, e in ticker_exchange_pairs),
+        return_exceptions=True,
+    )
+    items: list[RealTimeOhlcvItem] = []
+    for result in results:
+        if isinstance(result, BaseException):
+            logger.warning("EODHD batch fetch error: %s", result)
+        else:
+            items.append(result)
+    return items
+
 
 MAX_STARTUP_RETRIES = 5
 STARTUP_RETRY_DELAY_S = 3
@@ -315,8 +405,8 @@ async def get_ohlcv_data(
     )
 
 
-@app.get("/ohlcv/latest/", response_model=BatchLatestResponse)
-async def get_batch_latest_ohlcv(
+@app.get("/ohlcv/latest_close/", response_model=BatchLatestResponse)
+async def get_batch_latest_close_ohlcv(
     tickers: Optional[str] = Query(None, description="Comma-separated tickers (e.g., AAPL,MSFT,GOOGL). If omitted, returns latest for all tickers."),
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key)
@@ -395,8 +485,8 @@ async def get_batch_latest_ohlcv(
     )
 
 
-@app.get("/ohlcv/latest/{ticker}", response_model=OhlcvDataResponse)
-async def get_latest_ohlcv(ticker: str, db: AsyncSession = Depends(get_db), api_key: str = Depends(verify_api_key)):
+@app.get("/ohlcv/latest_close/{ticker}", response_model=OhlcvDataResponse)
+async def get_latest_close_ohlcv(ticker: str, db: AsyncSession = Depends(get_db), api_key: str = Depends(verify_api_key)):
     query = select(OhlcvData).where(
         OhlcvData.ticker == ticker.upper()
     ).order_by(OhlcvData.date.desc()).limit(1)
@@ -408,6 +498,39 @@ async def get_latest_ohlcv(ticker: str, db: AsyncSession = Depends(get_db), api_
         raise HTTPException(status_code=404, detail=f"No OHLCV data found for ticker: {ticker}")
     
     return ohlcv
+
+
+@app.get("/ohlcv/latest/", response_model=RealTimeOhlcvResponse)
+async def get_realtime_latest_ohlcv(
+    tickers: str = Query(..., description="Comma-separated tickers (e.g., AAPL,MSFT,GOOGL). Required."),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns real-time OHLCV data from EODHD for the specified tickers.
+    The `tickers` parameter is required.
+    """
+    ticker_list = parse_comma_separated(tickers)
+    if not ticker_list:
+        raise HTTPException(status_code=400, detail="tickers parameter is required")
+
+    pairs = [(t, "US") for t in ticker_list]
+    items = await fetch_eodhd_realtime_batch(pairs)
+    return RealTimeOhlcvResponse(data=items, count=len(items))
+
+
+@app.get("/ohlcv/latest/{ticker}", response_model=RealTimeOhlcvItem)
+async def get_realtime_latest_ohlcv_single(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns real-time OHLCV data from EODHD for a single ticker.
+    """
+    ticker = ticker.upper()
+    data = await fetch_eodhd_realtime(ticker, "US")
+    return parse_eodhd_response(data, ticker, "US")
 
 
 @app.get("/ohlcv/stats/{ticker}", response_model=OhlcvStatsResponse)
@@ -1324,28 +1447,28 @@ async def _get_etf_index_latest_batch(
     return EtfIndexLatestResponse(data=items, count=len(items))
 
 
-@app.get("/etf/latest/", response_model=EtfIndexLatestResponse)
-async def get_etf_latest_batch(
+@app.get("/etf/latest_close/", response_model=EtfIndexLatestResponse)
+async def get_etf_latest_close_batch(
     tickers: Optional[str] = Query(None, description="Comma-separated ETF tickers (e.g., SPY,QQQ,IWM). If omitted, returns latest for all ETFs."),
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Returns the latest OHLCV record for ETFs.
+    Returns the latest OHLCV record from the database for ETFs.
     Enriched with name, exchange, isin, and currency from etf_index_assets.
     Optionally filter by specific tickers.
     """
     return await _get_etf_index_latest_batch(asset_type="etf", tickers=tickers, db=db)
 
 
-@app.get("/etf/latest/{ticker}", response_model=EtfIndexLatestItem)
-async def get_etf_latest_single(
+@app.get("/etf/latest_close/{ticker}", response_model=EtfIndexLatestItem)
+async def get_etf_latest_close_single(
     ticker: str,
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Returns the latest OHLCV record for a single ETF, enriched with asset metadata.
+    Returns the latest OHLCV record from the database for a single ETF, enriched with asset metadata.
     """
     ticker = ticker.upper()
 
@@ -1390,28 +1513,86 @@ async def get_etf_latest_single(
     )
 
 
-@app.get("/index/latest/", response_model=EtfIndexLatestResponse)
-async def get_index_latest_batch(
+@app.get("/etf/latest/", response_model=RealTimeOhlcvResponse)
+async def get_etf_realtime_latest_batch(
+    tickers: str = Query(..., description="Comma-separated ETF tickers (e.g., SPY,QQQ,IWM). Required."),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns real-time OHLCV data from EODHD for the specified ETF tickers.
+    The `tickers` parameter is required.
+    """
+    ticker_list = parse_comma_separated(tickers)
+    if not ticker_list:
+        raise HTTPException(status_code=400, detail="tickers parameter is required")
+
+    assets_query = select(EtfIndexAsset).where(
+        and_(EtfIndexAsset.code.in_(ticker_list), EtfIndexAsset.type == "etf")
+    )
+    result = await db.execute(assets_query)
+    assets = result.scalars().all()
+
+    found_tickers = {a.code for a in assets}
+    missing = [t for t in ticker_list if t not in found_tickers]
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No ETF found with tickers: {', '.join(missing)}",
+        )
+
+    pairs = [(str(a.code), str(a.exchange)) for a in assets]
+    items = await fetch_eodhd_realtime_batch(pairs)
+    return RealTimeOhlcvResponse(data=items, count=len(items))
+
+
+@app.get("/etf/latest/{ticker}", response_model=RealTimeOhlcvItem)
+async def get_etf_realtime_latest_single(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns real-time OHLCV data from EODHD for a single ETF.
+    """
+    ticker = ticker.upper()
+
+    asset_query = select(EtfIndexAsset).where(
+        and_(EtfIndexAsset.code == ticker, EtfIndexAsset.type == "etf")
+    )
+    asset_result = await db.execute(asset_query)
+    asset = asset_result.scalar_one_or_none()
+
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"No ETF found with ticker: {ticker}")
+
+    exchange = str(asset.exchange)
+    data = await fetch_eodhd_realtime(ticker, exchange)
+    return parse_eodhd_response(data, ticker, exchange)
+
+
+@app.get("/index/latest_close/", response_model=EtfIndexLatestResponse)
+async def get_index_latest_close_batch(
     tickers: Optional[str] = Query(None, description="Comma-separated index tickers (e.g., GSPC,DJI,IXIC). If omitted, returns latest for all indices."),
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Returns the latest OHLCV record for indices.
+    Returns the latest OHLCV record from the database for indices.
     Enriched with name, exchange, isin, and currency from etf_index_assets.
     Optionally filter by specific tickers.
     """
     return await _get_etf_index_latest_batch(asset_type="index", tickers=tickers, db=db)
 
 
-@app.get("/index/latest/{ticker}", response_model=EtfIndexLatestItem)
-async def get_index_latest_single(
+@app.get("/index/latest_close/{ticker}", response_model=EtfIndexLatestItem)
+async def get_index_latest_close_single(
     ticker: str,
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Returns the latest OHLCV record for a single index, enriched with asset metadata.
+    Returns the latest OHLCV record from the database for a single index, enriched with asset metadata.
     """
     ticker = ticker.upper()
 
@@ -1454,6 +1635,64 @@ async def get_index_latest_single(
         adjusted_close=ohlcv.adjusted_close,  # type: ignore[arg-type]
         volume=ohlcv.volume,      # type: ignore[arg-type]
     )
+
+
+@app.get("/index/latest/", response_model=RealTimeOhlcvResponse)
+async def get_index_realtime_latest_batch(
+    tickers: str = Query(..., description="Comma-separated index tickers (e.g., GSPC,DJI,IXIC). Required."),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns real-time OHLCV data from EODHD for the specified index tickers.
+    The `tickers` parameter is required.
+    """
+    ticker_list = parse_comma_separated(tickers)
+    if not ticker_list:
+        raise HTTPException(status_code=400, detail="tickers parameter is required")
+
+    assets_query = select(EtfIndexAsset).where(
+        and_(EtfIndexAsset.code.in_(ticker_list), EtfIndexAsset.type == "index")
+    )
+    result = await db.execute(assets_query)
+    assets = result.scalars().all()
+
+    found_tickers = {a.code for a in assets}
+    missing = [t for t in ticker_list if t not in found_tickers]
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No index found with tickers: {', '.join(missing)}",
+        )
+
+    pairs = [(str(a.code), str(a.exchange)) for a in assets]
+    items = await fetch_eodhd_realtime_batch(pairs)
+    return RealTimeOhlcvResponse(data=items, count=len(items))
+
+
+@app.get("/index/latest/{ticker}", response_model=RealTimeOhlcvItem)
+async def get_index_realtime_latest_single(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns real-time OHLCV data from EODHD for a single index.
+    """
+    ticker = ticker.upper()
+
+    asset_query = select(EtfIndexAsset).where(
+        and_(EtfIndexAsset.code == ticker, EtfIndexAsset.type == "index")
+    )
+    asset_result = await db.execute(asset_query)
+    asset = asset_result.scalar_one_or_none()
+
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"No index found with ticker: {ticker}")
+
+    exchange = str(asset.exchange)
+    data = await fetch_eodhd_realtime(ticker, exchange)
+    return parse_eodhd_response(data, ticker, exchange)
 
 
 # ── Government Bond Endpoints ────────────────────────────────────────────────
@@ -1579,8 +1818,8 @@ async def get_gov_bond_ohlcv_data(
     )
 
 
-@app.get("/gov-bond/latest/", response_model=GovBondLatestResponse)
-async def get_gov_bond_latest_batch(
+@app.get("/gov-bond/latest_close/", response_model=GovBondLatestResponse)
+async def get_gov_bond_latest_close_batch(
     tickers: Optional[str] = Query(None, description="Comma-separated government bond tickers (e.g., UK10Y,US10Y,DE10Y). If omitted, returns latest for all government bonds."),
     country: Optional[str] = Query(None, description="Filter by single country code (e.g., US, DE, JP)"),
     countries: Optional[str] = Query(None, description="Comma-separated country codes (e.g., US,DE,JP)"),
@@ -1588,7 +1827,7 @@ async def get_gov_bond_latest_batch(
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Returns the latest OHLCV record for government bonds.
+    Returns the latest OHLCV record from the database for government bonds.
     Uses LATERAL join driven by gov_bond_assets for efficient per-ticker
     latest-row lookups. Enriched with name, exchange, type, currency, country.
     Optionally filter by specific tickers and/or country/countries.
@@ -1664,14 +1903,14 @@ async def get_gov_bond_latest_batch(
     return GovBondLatestResponse(data=items, count=len(items))
 
 
-@app.get("/gov-bond/latest/{ticker}", response_model=GovBondLatestItem)
-async def get_gov_bond_latest_single(
+@app.get("/gov-bond/latest_close/{ticker}", response_model=GovBondLatestItem)
+async def get_gov_bond_latest_close_single(
     ticker: str,
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Returns the latest OHLCV record for a single government bond,
+    Returns the latest OHLCV record from the database for a single government bond,
     enriched with asset metadata (name, exchange, type, currency, country).
     """
     ticker = ticker.upper()
@@ -1713,6 +1952,60 @@ async def get_gov_bond_latest_single(
         adjusted_close=ohlcv.adjusted_close,  # type: ignore[arg-type]
         volume=ohlcv.volume,      # type: ignore[arg-type]
     )
+
+
+@app.get("/gov-bond/latest/", response_model=RealTimeOhlcvResponse)
+async def get_gov_bond_realtime_latest_batch(
+    tickers: str = Query(..., description="Comma-separated government bond tickers (e.g., UK10Y,US10Y,DE10Y). Required."),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns real-time OHLCV data from EODHD for the specified government bond tickers.
+    The `tickers` parameter is required.
+    """
+    ticker_list = parse_comma_separated(tickers)
+    if not ticker_list:
+        raise HTTPException(status_code=400, detail="tickers parameter is required")
+
+    assets_query = select(GovBondAsset).where(GovBondAsset.code.in_(ticker_list))
+    result = await db.execute(assets_query)
+    assets = result.scalars().all()
+
+    found_tickers = {a.code for a in assets}
+    missing = [t for t in ticker_list if t not in found_tickers]
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No government bond found with tickers: {', '.join(missing)}",
+        )
+
+    pairs = [(str(a.code), str(a.exchange)) for a in assets]
+    items = await fetch_eodhd_realtime_batch(pairs)
+    return RealTimeOhlcvResponse(data=items, count=len(items))
+
+
+@app.get("/gov-bond/latest/{ticker}", response_model=RealTimeOhlcvItem)
+async def get_gov_bond_realtime_latest_single(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns real-time OHLCV data from EODHD for a single government bond.
+    """
+    ticker = ticker.upper()
+
+    asset_query = select(GovBondAsset).where(GovBondAsset.code == ticker)
+    asset_result = await db.execute(asset_query)
+    asset = asset_result.scalar_one_or_none()
+
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"No government bond found with ticker: {ticker}")
+
+    exchange = str(asset.exchange)
+    data = await fetch_eodhd_realtime(ticker, exchange)
+    return parse_eodhd_response(data, ticker, exchange)
 
 
 # ── Foreign Exchange (FX) Endpoints ──────────────────────────────────────────
@@ -1837,8 +2130,8 @@ async def get_fx_ohlcv_data(
     )
 
 
-@app.get("/fx/latest/", response_model=FxLatestResponse)
-async def get_fx_latest_batch(
+@app.get("/fx/latest_close/", response_model=FxLatestResponse)
+async def get_fx_latest_close_batch(
     tickers: Optional[str] = Query(None, description="Comma-separated FX tickers (e.g., EURUSD,GBPUSD,USDJPY). If omitted, returns latest for all FX pairs."),
     base_currency: Optional[str] = Query(None, description="Filter by base currency code (e.g., EUR, GBP)"),
     quote_currency: Optional[str] = Query(None, description="Filter by quote currency code (e.g., USD, JPY)"),
@@ -1846,7 +2139,7 @@ async def get_fx_latest_batch(
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Returns the latest OHLCV record for foreign exchange pairs.
+    Returns the latest OHLCV record from the database for foreign exchange pairs.
     Uses LATERAL join driven by fx_assets for efficient per-ticker
     latest-row lookups. Enriched with name, exchange, type, currency,
     base_currency, quote_currency.
@@ -1927,14 +2220,14 @@ async def get_fx_latest_batch(
     return FxLatestResponse(data=items, count=len(items))
 
 
-@app.get("/fx/latest/{ticker}", response_model=FxLatestItem)
-async def get_fx_latest_single(
+@app.get("/fx/latest_close/{ticker}", response_model=FxLatestItem)
+async def get_fx_latest_close_single(
     ticker: str,
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Returns the latest OHLCV record for a single foreign exchange pair,
+    Returns the latest OHLCV record from the database for a single foreign exchange pair,
     enriched with asset metadata (name, exchange, type, currency,
     base_currency, quote_currency).
     """
@@ -1978,6 +2271,60 @@ async def get_fx_latest_single(
         adjusted_close=ohlcv.adjusted_close,  # type: ignore[arg-type]
         volume=ohlcv.volume,                # type: ignore[arg-type]
     )
+
+
+@app.get("/fx/latest/", response_model=RealTimeOhlcvResponse)
+async def get_fx_realtime_latest_batch(
+    tickers: str = Query(..., description="Comma-separated FX tickers (e.g., EURUSD,GBPUSD,USDJPY). Required."),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns real-time OHLCV data from EODHD for the specified FX tickers.
+    The `tickers` parameter is required.
+    """
+    ticker_list = parse_comma_separated(tickers)
+    if not ticker_list:
+        raise HTTPException(status_code=400, detail="tickers parameter is required")
+
+    assets_query = select(FxAsset).where(FxAsset.code.in_(ticker_list))
+    result = await db.execute(assets_query)
+    assets = result.scalars().all()
+
+    found_tickers = {a.code for a in assets}
+    missing = [t for t in ticker_list if t not in found_tickers]
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No FX pair found with tickers: {', '.join(missing)}",
+        )
+
+    pairs = [(str(a.code), str(a.exchange)) for a in assets]
+    items = await fetch_eodhd_realtime_batch(pairs)
+    return RealTimeOhlcvResponse(data=items, count=len(items))
+
+
+@app.get("/fx/latest/{ticker}", response_model=RealTimeOhlcvItem)
+async def get_fx_realtime_latest_single(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns real-time OHLCV data from EODHD for a single FX pair.
+    """
+    ticker = ticker.upper()
+
+    asset_query = select(FxAsset).where(FxAsset.code == ticker)
+    asset_result = await db.execute(asset_query)
+    asset = asset_result.scalar_one_or_none()
+
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"No FX pair found with ticker: {ticker}")
+
+    exchange = str(asset.exchange)
+    data = await fetch_eodhd_realtime(ticker, exchange)
+    return parse_eodhd_response(data, ticker, exchange)
 
 
 # ── Crypto Endpoints ─────────────────────────────────────────────────────────
@@ -2099,8 +2446,8 @@ async def get_crypto_ohlcv_data(
     )
 
 
-@app.get("/crypto/latest/", response_model=CryptoLatestResponse)
-async def get_crypto_latest_batch(
+@app.get("/crypto/latest_close/", response_model=CryptoLatestResponse)
+async def get_crypto_latest_close_batch(
     tickers: Optional[str] = Query(None, description="Comma-separated crypto tickers (e.g., BTC-USD,ETH-USD,SOL-USD). If omitted, returns latest for all crypto assets."),
     base_currency: Optional[str] = Query(None, description="Filter by base currency code (e.g., BTC, ETH)"),
     quote_currency: Optional[str] = Query(None, description="Filter by quote currency code (e.g., USD, USDT)"),
@@ -2108,7 +2455,7 @@ async def get_crypto_latest_batch(
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Returns the latest OHLCV record for crypto assets.
+    Returns the latest OHLCV record from the database for crypto assets.
     Uses LATERAL join driven by crypto_assets for efficient per-ticker
     latest-row lookups. Enriched with name, exchange, type, currency,
     base_currency, quote_currency.
@@ -2186,14 +2533,14 @@ async def get_crypto_latest_batch(
     return CryptoLatestResponse(data=items, count=len(items))
 
 
-@app.get("/crypto/latest/{ticker}", response_model=CryptoLatestItem)
-async def get_crypto_latest_single(
+@app.get("/crypto/latest_close/{ticker}", response_model=CryptoLatestItem)
+async def get_crypto_latest_close_single(
     ticker: str,
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Returns the latest OHLCV record for a single crypto asset,
+    Returns the latest OHLCV record from the database for a single crypto asset,
     enriched with asset metadata (name, exchange, type, currency,
     base_currency, quote_currency).
     """
@@ -2233,6 +2580,58 @@ async def get_crypto_latest_single(
         adjusted_close=ohlcv.adjusted_close,  # type: ignore[arg-type]
         volume=ohlcv.volume,                # type: ignore[arg-type]
     )
+
+
+@app.get("/crypto/latest/", response_model=RealTimeOhlcvResponse)
+async def get_crypto_realtime_latest_batch(
+    tickers: str = Query(..., description="Comma-separated crypto tickers (e.g., BTC-USD,ETH-USD,SOL-USD). Required."),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns real-time OHLCV data from EODHD for the specified crypto tickers.
+    The `tickers` parameter is required.
+    """
+    ticker_list = parse_comma_separated_preserve(tickers)
+    if not ticker_list:
+        raise HTTPException(status_code=400, detail="tickers parameter is required")
+
+    assets_query = select(CryptoAsset).where(CryptoAsset.code.in_(ticker_list))
+    result = await db.execute(assets_query)
+    assets = result.scalars().all()
+
+    found_tickers = {a.code for a in assets}
+    missing = [t for t in ticker_list if t not in found_tickers]
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No crypto asset found with tickers: {', '.join(missing)}",
+        )
+
+    pairs = [(str(a.code), str(a.exchange)) for a in assets]
+    items = await fetch_eodhd_realtime_batch(pairs)
+    return RealTimeOhlcvResponse(data=items, count=len(items))
+
+
+@app.get("/crypto/latest/{ticker}", response_model=RealTimeOhlcvItem)
+async def get_crypto_realtime_latest_single(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns real-time OHLCV data from EODHD for a single crypto asset.
+    """
+    asset_query = select(CryptoAsset).where(CryptoAsset.code == ticker)
+    asset_result = await db.execute(asset_query)
+    asset = asset_result.scalar_one_or_none()
+
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"No crypto asset found with ticker: {ticker}")
+
+    exchange = str(asset.exchange)
+    data = await fetch_eodhd_realtime(ticker, exchange)
+    return parse_eodhd_response(data, ticker, exchange)
 
 
 @app.get("/crypto/history/", response_model=CryptoHistoryPaginatedResponse)
@@ -2637,8 +3036,8 @@ async def get_uk_ohlcv_data(
     )
 
 
-@app.get("/uk/latest/", response_model=UkLatestResponse)
-async def get_uk_latest_batch(
+@app.get("/uk/latest_close/", response_model=UkLatestResponse)
+async def get_uk_latest_close_batch(
     tickers: Optional[str] = Query(None, description="Comma-separated UK tickers (e.g., AZN,SHEL,HSBA). If omitted, returns latest for all UK stocks."),
     sector: Optional[str] = Query(None, description="Filter by sector (e.g., Healthcare, Energy)"),
     industry: Optional[str] = Query(None, description="Filter by industry (e.g., Drug Manufacturers, Oil & Gas)"),
@@ -2646,7 +3045,7 @@ async def get_uk_latest_batch(
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Returns the latest OHLCV record for UK stocks (LSE).
+    Returns the latest OHLCV record from the database for UK stocks (LSE).
     Uses LATERAL join driven by uk_assets for efficient per-ticker
     latest-row lookups. Enriched with name, exchange, type, sector,
     industry, isin, currency.
@@ -2729,14 +3128,14 @@ async def get_uk_latest_batch(
     return UkLatestResponse(data=items, count=len(items))
 
 
-@app.get("/uk/latest/{ticker}", response_model=UkLatestItem)
-async def get_uk_latest_single(
+@app.get("/uk/latest_close/{ticker}", response_model=UkLatestItem)
+async def get_uk_latest_close_single(
     ticker: str,
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Returns the latest OHLCV record for a single UK stock (LSE),
+    Returns the latest OHLCV record from the database for a single UK stock (LSE),
     enriched with asset metadata (name, exchange, type, sector,
     industry, isin, currency).
     """
@@ -2779,6 +3178,58 @@ async def get_uk_latest_single(
         adjusted_close=ohlcv.adjusted_close,  # type: ignore[arg-type]
         volume=ohlcv.volume,                # type: ignore[arg-type]
     )
+
+
+@app.get("/uk/latest/", response_model=RealTimeOhlcvResponse)
+async def get_uk_realtime_latest_batch(
+    tickers: str = Query(..., description="Comma-separated UK tickers (e.g., AZN,SHEL,HSBA). Required."),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns real-time OHLCV data from EODHD for the specified UK tickers.
+    The `tickers` parameter is required.
+    """
+    ticker_list = parse_comma_separated_preserve(tickers)
+    if not ticker_list:
+        raise HTTPException(status_code=400, detail="tickers parameter is required")
+
+    assets_query = select(UkAsset).where(UkAsset.code.in_(ticker_list))
+    result = await db.execute(assets_query)
+    assets = result.scalars().all()
+
+    found_tickers = {a.code for a in assets}
+    missing = [t for t in ticker_list if t not in found_tickers]
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No UK stock found with tickers: {', '.join(missing)}",
+        )
+
+    pairs = [(str(a.code), str(a.exchange)) for a in assets]
+    items = await fetch_eodhd_realtime_batch(pairs)
+    return RealTimeOhlcvResponse(data=items, count=len(items))
+
+
+@app.get("/uk/latest/{ticker}", response_model=RealTimeOhlcvItem)
+async def get_uk_realtime_latest_single(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Returns real-time OHLCV data from EODHD for a single UK stock.
+    """
+    asset_query = select(UkAsset).where(UkAsset.code == ticker)
+    asset_result = await db.execute(asset_query)
+    asset = asset_result.scalar_one_or_none()
+
+    if not asset:
+        raise HTTPException(status_code=404, detail=f"No UK stock found with ticker: {ticker}")
+
+    exchange = str(asset.exchange)
+    data = await fetch_eodhd_realtime(ticker, exchange)
+    return parse_eodhd_response(data, ticker, exchange)
 
 
 # ── FTSE 100 Endpoints ─────────────────────────────────────────────────────
