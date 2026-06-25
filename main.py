@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 import os
 import math
 import re
+import time
 import asyncio
 import logging
 
@@ -82,6 +83,23 @@ async def verify_api_key(api_key: str = Security(api_key_query)):
     return api_key
 
 logger = logging.getLogger("ohlcv-api")
+
+_count_cache: dict[str, tuple[int, float]] = {}
+COUNT_CACHE_TTL_S = 3600
+
+
+def _get_cached_count(cache_key: str) -> Optional[int]:
+    entry = _count_cache.get(cache_key)
+    if entry:
+        count, ts = entry
+        if time.time() - ts < COUNT_CACHE_TTL_S:
+            return count
+        del _count_cache[cache_key]
+    return None
+
+
+def _set_cached_count(cache_key: str, count: int) -> None:
+    _count_cache[cache_key] = (count, time.time())
 
 
 async def fetch_eodhd_realtime(ticker: str, exchange: str) -> dict:
@@ -385,13 +403,17 @@ async def get_ohlcv_data(
     
     offset = (page - 1) * per_page
     query = query.offset(offset).limit(per_page)
-    
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
-    
+
+    cache_key = f"ohlcv|tickers={ticker_list}|isins={isin_list}|year={year}|month={month}|start={start_date}|end={end_date}|omin={open_min}|omax={open_max}|cmin={close_min}|cmax={close_max}|vmin={volume_min}|vmax={volume_max}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
+
     result = await db.execute(query)
     data = result.scalars().all()
-    
+
     total_pages = math.ceil(total / per_page) if total > 0 else 1
     
     return PaginatedResponse(
@@ -715,8 +737,12 @@ async def list_sp500_constituents(
     for w in base_where:
         count_query = count_query.where(w)
 
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
+    cache_key = f"sp500|sector={sector}|is_active={is_active}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
 
     # Data query with LEFT JOIN to assets for enrichment
     data_query = select(
@@ -963,8 +989,12 @@ async def get_sp500_batch_history(
             WHERE 1=1 {date_where}
         """)
 
-        total_result = await db.execute(count_query)
-        total = total_result.scalar() or 0
+        cache_key = f"sp500_hist_t|tickers={ticker_list}|start={start_date}|end={end_date}|year={year}|month={month}"
+        total = _get_cached_count(cache_key)
+        if total is None:
+            total_result = await db.execute(count_query)
+            total = total_result.scalar() or 0
+            _set_cached_count(cache_key, total)
 
         # Data query with pagination — specific tickers
         offset = (page - 1) * per_page
@@ -1019,8 +1049,12 @@ async def get_sp500_batch_history(
             WHERE 1=1 {date_where}
         """)
 
-        total_result = await db.execute(count_query)
-        total = total_result.scalar() or 0
+        cache_key = f"sp500_hist_all|start={start_date}|end={end_date}|year={year}|month={month}"
+        total = _get_cached_count(cache_key)
+        if total is None:
+            total_result = await db.execute(count_query)
+            total = total_result.scalar() or 0
+            _set_cached_count(cache_key, total)
 
         # Data query with pagination — all constituents
         offset = (page - 1) * per_page
@@ -1270,8 +1304,12 @@ async def _get_etf_index_ohlcv(
     for c in count_conditions:
         count_query = count_query.where(c)
 
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
+    cache_key = f"{asset_type}|tickers={ticker_list}|start={start_date}|end={end_date}|year={year}|month={month}|omin={open_min}|omax={open_max}|cmin={close_min}|cmax={close_max}|vmin={volume_min}|vmax={volume_max}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
 
     # Data query
     sort_column = getattr(EtfIndexOhlcvData, sort_by or "date")
@@ -1786,8 +1824,12 @@ async def get_gov_bond_ohlcv_data(
     for c in count_conditions:
         count_query = count_query.where(c)
 
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
+    cache_key = f"gov_bond|tickers={ticker_list}|country={country}|countries={country_list}|start={start_date}|end={end_date}|year={year}|month={month}|omin={open_min}|omax={open_max}|cmin={close_min}|cmax={close_max}|vmin={volume_min}|vmax={volume_max}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
 
     # Data query
     sort_column = getattr(GovBondOhlcvData, sort_by or "date")
@@ -2098,8 +2140,12 @@ async def get_fx_ohlcv_data(
     for c in count_conditions:
         count_query = count_query.where(c)
 
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
+    cache_key = f"fx|tickers={ticker_list}|base={base_currency}|quote={quote_currency}|start={start_date}|end={end_date}|year={year}|month={month}|omin={open_min}|omax={open_max}|cmin={close_min}|cmax={close_max}|vmin={volume_min}|vmax={volume_max}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
 
     # Data query
     sort_column = getattr(FxOhlcvData, sort_by or "date")
@@ -2415,8 +2461,12 @@ async def get_crypto_ohlcv_data(
     for c in count_conditions:
         count_query = count_query.where(c)
 
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
+    cache_key = f"crypto|tickers={ticker_list}|base={base_currency}|quote={quote_currency}|start={start_date}|end={end_date}|year={year}|month={month}|omin={open_min}|omax={open_max}|cmin={close_min}|cmax={close_max}|vmin={volume_min}|vmax={volume_max}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
 
     sort_column = getattr(CryptoOhlcvData, sort_by or "date")
     offset = (page - 1) * per_page
@@ -2696,8 +2746,12 @@ async def get_crypto_history(
             WHERE 1=1 {base_where} {quote_where} {date_where}
         """)
 
-        total_result = await db.execute(count_query)
-        total = total_result.scalar() or 0
+        cache_key = f"crypto_lc_t|tickers={ticker_list}|base={base_currency}|quote={quote_currency}|start={start_date}|end={end_date}|year={year}|month={month}"
+        total = _get_cached_count(cache_key)
+        if total is None:
+            total_result = await db.execute(count_query)
+            total = total_result.scalar() or 0
+            _set_cached_count(cache_key, total)
 
         offset = (page - 1) * per_page
 
@@ -2721,8 +2775,12 @@ async def get_crypto_history(
             WHERE 1=1 {base_where} {quote_where} {date_where}
         """)
 
-        total_result = await db.execute(count_query)
-        total = total_result.scalar() or 0
+        cache_key = f"crypto_lc_all|base={base_currency}|quote={quote_currency}|start={start_date}|end={end_date}|year={year}|month={month}"
+        total = _get_cached_count(cache_key)
+        if total is None:
+            total_result = await db.execute(count_query)
+            total = total_result.scalar() or 0
+            _set_cached_count(cache_key, total)
 
         offset = (page - 1) * per_page
 
@@ -2870,8 +2928,12 @@ async def get_crypto_assets(
     count_query = select(func.count(CryptoAsset.code))
     for c in conditions:
         count_query = count_query.where(c)
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
+    cache_key = f"crypto_assets|base={base_currency}|quote={quote_currency}|type={type}|search={search}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
 
     allowed_sorts = {"code", "name"}
     sort_field = sort if sort in allowed_sorts else "code"
@@ -3004,8 +3066,12 @@ async def get_uk_ohlcv_data(
     for c in count_conditions:
         count_query = count_query.where(c)
 
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
+    cache_key = f"uk|tickers={ticker_list}|sector={sector}|industry={industry}|start={start_date}|end={end_date}|year={year}|month={month}|omin={open_min}|omax={open_max}|cmin={close_min}|cmax={close_max}|vmin={volume_min}|vmax={volume_max}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
 
     # Data query
     sort_column = getattr(UkOhlcvData, sort_by or "date")
@@ -3338,8 +3404,12 @@ async def get_ftse100_ohlcv_data(
             {ohlcv_where}
         """)
 
-        total_result = await db.execute(count_query)
-        total = total_result.scalar() or 0
+        cache_key = f"uk_lc_t|tickers={ticker_list}|sector={sector}|industry={industry}|start={start_date}|end={end_date}|year={year}|month={month}"
+        total = _get_cached_count(cache_key)
+        if total is None:
+            total_result = await db.execute(count_query)
+            total = total_result.scalar() or 0
+            _set_cached_count(cache_key, total)
 
         # Data query with pagination — specific tickers
         offset = (page - 1) * per_page
@@ -3370,8 +3440,12 @@ async def get_ftse100_ohlcv_data(
             {ohlcv_where}
         """)
 
-        total_result = await db.execute(count_query)
-        total = total_result.scalar() or 0
+        cache_key = f"uk_lc_all|sector={sector}|industry={industry}|start={start_date}|end={end_date}|year={year}|month={month}"
+        total = _get_cached_count(cache_key)
+        if total is None:
+            total_result = await db.execute(count_query)
+            total = total_result.scalar() or 0
+            _set_cached_count(cache_key, total)
 
         # Data query with pagination — all constituents
         offset = (page - 1) * per_page
@@ -3637,8 +3711,12 @@ async def get_ust_bill_rates(
     offset = (page - 1) * per_page
     query = query.offset(offset).limit(per_page)
 
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
+    cache_key = f"ust_bill|tenors={tenor_list}|start={start_date}|end={end_date}|dmin={discount_min}|dmax={discount_max}|cmin={coupon_min}|cmax={coupon_max}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
 
     result = await db.execute(query)
     data = result.scalars().all()
@@ -3790,8 +3868,12 @@ async def get_ust_long_term_rates(
     offset = (page - 1) * per_page
     query = query.offset(offset).limit(per_page)
 
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
+    cache_key = f"ust_lt|rt={rt_list}|start={start_date}|end={end_date}|rmin={rate_min}|rmax={rate_max}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
 
     result = await db.execute(query)
     data = result.scalars().all()
@@ -3933,8 +4015,12 @@ async def get_ust_real_yield_rates(
     offset = (page - 1) * per_page
     query = query.offset(offset).limit(per_page)
 
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
+    cache_key = f"ust_ry|tenors={tenor_list}|start={start_date}|end={end_date}|rmin={rate_min}|rmax={rate_max}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
 
     result = await db.execute(query)
     data = result.scalars().all()
@@ -4076,8 +4162,12 @@ async def get_ust_yield_rates(
     offset = (page - 1) * per_page
     query = query.offset(offset).limit(per_page)
 
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
+    cache_key = f"ust_yield|tenors={tenor_list}|start={start_date}|end={end_date}|rmin={rate_min}|rmax={rate_max}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
 
     result = await db.execute(query)
     data = result.scalars().all()
@@ -4247,8 +4337,12 @@ async def get_commodity_ohlcv_data(
     offset = (page - 1) * per_page
     query = query.offset(offset).limit(per_page)
 
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
+    cache_key = f"commodities|symbols={symbol_list}|category={category}|start={start_date}|end={end_date}|year={year}|month={month}|omin={open_min}|omax={open_max}|cmin={close_min}|cmax={close_max}|vmin={volume_min}|vmax={volume_max}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
 
     result = await db.execute(query)
     data = result.scalars().all()
