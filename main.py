@@ -541,20 +541,6 @@ async def get_realtime_latest_ohlcv(
     return RealTimeOhlcvResponse(data=items, count=len(items))
 
 
-@app.get("/ohlcv/latest/{ticker}", response_model=RealTimeOhlcvItem)
-async def get_realtime_latest_ohlcv_single(
-    ticker: str,
-    db: AsyncSession = Depends(get_db),
-    api_key: str = Depends(verify_api_key),
-):
-    """
-    Returns real-time OHLCV data from EODHD for a single ticker.
-    """
-    ticker = ticker.upper()
-    data = await fetch_eodhd_realtime(ticker, "US")
-    return parse_eodhd_response(data, ticker, "US")
-
-
 @app.get("/ohlcv/stats/{ticker}", response_model=OhlcvStatsResponse)
 async def get_ohlcv_stats(ticker: str, db: AsyncSession = Depends(get_db), api_key: str = Depends(verify_api_key)):
     ticker = ticker.upper()
@@ -1584,30 +1570,6 @@ async def get_etf_realtime_latest_batch(
     return RealTimeOhlcvResponse(data=items, count=len(items))
 
 
-@app.get("/etf/latest/{ticker}", response_model=RealTimeOhlcvItem)
-async def get_etf_realtime_latest_single(
-    ticker: str,
-    db: AsyncSession = Depends(get_db),
-    api_key: str = Depends(verify_api_key),
-):
-    """
-    Returns real-time OHLCV data from EODHD for a single ETF.
-    """
-    ticker = ticker.upper()
-
-    asset_query = select(EtfIndexAsset).where(
-        and_(EtfIndexAsset.code == ticker, EtfIndexAsset.type == "etf")
-    )
-    asset_result = await db.execute(asset_query)
-    asset = asset_result.scalar_one_or_none()
-
-    if not asset:
-        raise HTTPException(status_code=404, detail=f"No ETF found with ticker: {ticker}")
-
-    exchange = str(asset.exchange)
-    data = await fetch_eodhd_realtime(ticker, exchange)
-    return parse_eodhd_response(data, ticker, exchange)
-
 
 @app.get("/index/latest_close/", response_model=EtfIndexLatestResponse)
 async def get_index_latest_close_batch(
@@ -1707,30 +1669,6 @@ async def get_index_realtime_latest_batch(
     items = await fetch_eodhd_realtime_batch(pairs)
     return RealTimeOhlcvResponse(data=items, count=len(items))
 
-
-@app.get("/index/latest/{ticker}", response_model=RealTimeOhlcvItem)
-async def get_index_realtime_latest_single(
-    ticker: str,
-    db: AsyncSession = Depends(get_db),
-    api_key: str = Depends(verify_api_key),
-):
-    """
-    Returns real-time OHLCV data from EODHD for a single index.
-    """
-    ticker = ticker.upper()
-
-    asset_query = select(EtfIndexAsset).where(
-        and_(EtfIndexAsset.code == ticker, EtfIndexAsset.type == "index")
-    )
-    asset_result = await db.execute(asset_query)
-    asset = asset_result.scalar_one_or_none()
-
-    if not asset:
-        raise HTTPException(status_code=404, detail=f"No index found with ticker: {ticker}")
-
-    exchange = str(asset.exchange)
-    data = await fetch_eodhd_realtime(ticker, exchange)
-    return parse_eodhd_response(data, ticker, exchange)
 
 
 # ── Government Bond Endpoints ────────────────────────────────────────────────
@@ -2027,27 +1965,6 @@ async def get_gov_bond_realtime_latest_batch(
     return RealTimeOhlcvResponse(data=items, count=len(items))
 
 
-@app.get("/gov-bond/latest/{ticker}", response_model=RealTimeOhlcvItem)
-async def get_gov_bond_realtime_latest_single(
-    ticker: str,
-    db: AsyncSession = Depends(get_db),
-    api_key: str = Depends(verify_api_key),
-):
-    """
-    Returns real-time OHLCV data from EODHD for a single government bond.
-    """
-    ticker = ticker.upper()
-
-    asset_query = select(GovBondAsset).where(GovBondAsset.code == ticker)
-    asset_result = await db.execute(asset_query)
-    asset = asset_result.scalar_one_or_none()
-
-    if not asset:
-        raise HTTPException(status_code=404, detail=f"No government bond found with ticker: {ticker}")
-
-    exchange = str(asset.exchange)
-    data = await fetch_eodhd_realtime(ticker, exchange)
-    return parse_eodhd_response(data, ticker, exchange)
 
 
 # ── Foreign Exchange (FX) Endpoints ──────────────────────────────────────────
@@ -2350,27 +2267,6 @@ async def get_fx_realtime_latest_batch(
     return RealTimeOhlcvResponse(data=items, count=len(items))
 
 
-@app.get("/fx/latest/{ticker}", response_model=RealTimeOhlcvItem)
-async def get_fx_realtime_latest_single(
-    ticker: str,
-    db: AsyncSession = Depends(get_db),
-    api_key: str = Depends(verify_api_key),
-):
-    """
-    Returns real-time OHLCV data from EODHD for a single FX pair.
-    """
-    ticker = ticker.upper()
-
-    asset_query = select(FxAsset).where(FxAsset.code == ticker)
-    asset_result = await db.execute(asset_query)
-    asset = asset_result.scalar_one_or_none()
-
-    if not asset:
-        raise HTTPException(status_code=404, detail=f"No FX pair found with ticker: {ticker}")
-
-    exchange = str(asset.exchange)
-    data = await fetch_eodhd_realtime(ticker, exchange)
-    return parse_eodhd_response(data, ticker, exchange)
 
 
 # ── Crypto Endpoints ─────────────────────────────────────────────────────────
@@ -2663,25 +2559,6 @@ async def get_crypto_realtime_latest_batch(
     return RealTimeOhlcvResponse(data=items, count=len(items))
 
 
-@app.get("/crypto/latest/{ticker}", response_model=RealTimeOhlcvItem)
-async def get_crypto_realtime_latest_single(
-    ticker: str,
-    db: AsyncSession = Depends(get_db),
-    api_key: str = Depends(verify_api_key),
-):
-    """
-    Returns real-time OHLCV data from EODHD for a single crypto asset.
-    """
-    asset_query = select(CryptoAsset).where(CryptoAsset.code == ticker)
-    asset_result = await db.execute(asset_query)
-    asset = asset_result.scalar_one_or_none()
-
-    if not asset:
-        raise HTTPException(status_code=404, detail=f"No crypto asset found with ticker: {ticker}")
-
-    exchange = str(asset.exchange)
-    data = await fetch_eodhd_realtime(ticker, exchange)
-    return parse_eodhd_response(data, ticker, exchange)
 
 
 @app.get("/crypto/history/", response_model=CryptoHistoryPaginatedResponse)
@@ -3277,25 +3154,6 @@ async def get_uk_realtime_latest_batch(
     return RealTimeOhlcvResponse(data=items, count=len(items))
 
 
-@app.get("/uk/latest/{ticker}", response_model=RealTimeOhlcvItem)
-async def get_uk_realtime_latest_single(
-    ticker: str,
-    db: AsyncSession = Depends(get_db),
-    api_key: str = Depends(verify_api_key),
-):
-    """
-    Returns real-time OHLCV data from EODHD for a single UK stock.
-    """
-    asset_query = select(UkAsset).where(UkAsset.code == ticker)
-    asset_result = await db.execute(asset_query)
-    asset = asset_result.scalar_one_or_none()
-
-    if not asset:
-        raise HTTPException(status_code=404, detail=f"No UK stock found with ticker: {ticker}")
-
-    exchange = str(asset.exchange)
-    data = await fetch_eodhd_realtime(ticker, exchange)
-    return parse_eodhd_response(data, ticker, exchange)
 
 
 # ── FTSE 100 Endpoints ─────────────────────────────────────────────────────
@@ -3592,59 +3450,6 @@ async def get_ftse100_latest_batch(
     return Ftse100LatestResponse(data=items, count=len(items))
 
 
-@app.get("/ftse100/latest/{ticker}", response_model=Ftse100LatestItem)
-async def get_ftse100_latest_single(
-    ticker: str,
-    db: AsyncSession = Depends(get_db),
-    api_key: str = Depends(verify_api_key),
-):
-    """
-    Returns the latest OHLCV record for a single FTSE 100 constituent,
-    enriched with metadata (name, sector, industry from ftse100_constituents
-    and isin, currency from uk_assets).
-    """
-    # Verify the ticker is a FTSE 100 constituent
-    constituent_query = select(Ftse100Constituent).where(Ftse100Constituent.code == ticker)
-    constituent_result = await db.execute(constituent_query)
-    constituent = constituent_result.scalar_one_or_none()
-
-    if not constituent:
-        raise HTTPException(status_code=404, detail=f"No FTSE 100 constituent found with ticker: {ticker}")
-
-    # Get latest OHLCV
-    ohlcv_query = select(UkOhlcvData).where(
-        UkOhlcvData.ticker == ticker
-    ).order_by(UkOhlcvData.date.desc()).limit(1)
-    ohlcv_result = await db.execute(ohlcv_query)
-    ohlcv = ohlcv_result.scalar_one_or_none()
-
-    if not ohlcv:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No OHLCV data found for FTSE 100 ticker: {ticker}. "
-                   f"The constituent exists in ftse100_constituents but has no price data in ohlcv_data_uk."
-        )
-
-    # Get isin/currency from uk_assets
-    asset_query = select(UkAsset).where(UkAsset.code == ticker)
-    asset_result = await db.execute(asset_query)
-    asset = asset_result.scalar_one_or_none()
-
-    return Ftse100LatestItem(
-        ticker=ticker,
-        name=constituent.name,                # type: ignore[arg-type]
-        sector=constituent.sector,            # type: ignore[arg-type]
-        industry=constituent.industry,        # type: ignore[arg-type]
-        isin=asset.isin if asset else None,       # type: ignore[arg-type]
-        currency=asset.currency if asset else None,  # type: ignore[arg-type]
-        date=ohlcv.date,                      # type: ignore[arg-type]
-        open=ohlcv.open,                      # type: ignore[arg-type]
-        high=ohlcv.high,                      # type: ignore[arg-type]
-        low=ohlcv.low,                        # type: ignore[arg-type]
-        close=ohlcv.close,                    # type: ignore[arg-type]
-        adjusted_close=ohlcv.adjusted_close,  # type: ignore[arg-type]
-        volume=ohlcv.volume,                  # type: ignore[arg-type]
-    )
 
 
 # ── US Treasury Rate Endpoints ───────────────────────────────────────────────
@@ -3781,38 +3586,6 @@ async def get_ust_bill_latest(
     return UstBillLatestResponse(data=items, count=len(items))
 
 
-@app.get("/ust/bill/latest/{tenor}", response_model=UstBillLatestItem)
-async def get_ust_bill_latest_single(
-    tenor: str,
-    db: AsyncSession = Depends(get_db),
-    api_key: str = Depends(verify_api_key),
-):
-    """
-    Returns the latest US Treasury bill rate for a single tenor.
-    """
-    tenor = tenor.upper()
-
-    query = select(UstBillRate).where(
-        UstBillRate.tenor == tenor
-    ).order_by(UstBillRate.date.desc()).limit(1)
-
-    result = await db.execute(query)
-    row = result.scalar_one_or_none()
-
-    if not row:
-        raise HTTPException(status_code=404, detail=f"No US Treasury bill rate found for tenor: {tenor}")
-
-    return UstBillLatestItem(
-        tenor=row.tenor,            # type: ignore[arg-type]
-        date=row.date,              # type: ignore[arg-type]
-        discount=row.discount,      # type: ignore[arg-type]
-        coupon=row.coupon,          # type: ignore[arg-type]
-        avg_discount=row.avg_discount,  # type: ignore[arg-type]
-        avg_coupon=row.avg_coupon,  # type: ignore[arg-type]
-        maturity_date=row.maturity_date,  # type: ignore[arg-type]
-        cusip=row.cusip,            # type: ignore[arg-type]
-    )
-
 
 # --- UST Long-Term Rates ---
 
@@ -3934,32 +3707,6 @@ async def get_ust_long_term_latest(
     return UstLongTermLatestResponse(data=items, count=len(items))
 
 
-@app.get("/ust/long-term/latest/{rate_type}", response_model=UstLongTermLatestItem)
-async def get_ust_long_term_latest_single(
-    rate_type: str,
-    db: AsyncSession = Depends(get_db),
-    api_key: str = Depends(verify_api_key),
-):
-    """
-    Returns the latest US Treasury long-term rate for a single rate type.
-    """
-    query = select(UstLongTermRate).where(
-        UstLongTermRate.rate_type == rate_type
-    ).order_by(UstLongTermRate.date.desc()).limit(1)
-
-    result = await db.execute(query)
-    row = result.scalar_one_or_none()
-
-    if not row:
-        raise HTTPException(status_code=404, detail=f"No US Treasury long-term rate found for rate type: {rate_type}")
-
-    return UstLongTermLatestItem(
-        rate_type=row.rate_type,            # type: ignore[arg-type]
-        date=row.date,                      # type: ignore[arg-type]
-        rate=row.rate,                      # type: ignore[arg-type]
-        extrapolation_factor=row.extrapolation_factor,  # type: ignore[arg-type]
-    )
-
 
 # --- UST Real Yield Rates ---
 
@@ -4080,33 +3827,6 @@ async def get_ust_real_yield_latest(
     return UstRealYieldLatestResponse(data=items, count=len(items))
 
 
-@app.get("/ust/real-yield/latest/{tenor}", response_model=UstRealYieldLatestItem)
-async def get_ust_real_yield_latest_single(
-    tenor: str,
-    db: AsyncSession = Depends(get_db),
-    api_key: str = Depends(verify_api_key),
-):
-    """
-    Returns the latest US Treasury real yield rate for a single tenor.
-    """
-    tenor = tenor.upper()
-
-    query = select(UstRealYieldRate).where(
-        UstRealYieldRate.tenor == tenor
-    ).order_by(UstRealYieldRate.date.desc()).limit(1)
-
-    result = await db.execute(query)
-    row = result.scalar_one_or_none()
-
-    if not row:
-        raise HTTPException(status_code=404, detail=f"No US Treasury real yield rate found for tenor: {tenor}")
-
-    return UstRealYieldLatestItem(
-        tenor=row.tenor,           # type: ignore[arg-type]
-        date=row.date,             # type: ignore[arg-type]
-        rate=row.rate,             # type: ignore[arg-type]
-    )
-
 
 # --- UST Yield Rates ---
 
@@ -4226,33 +3946,6 @@ async def get_ust_yield_latest(
 
     return UstYieldLatestResponse(data=items, count=len(items))
 
-
-@app.get("/ust/yield/latest/{tenor}", response_model=UstYieldLatestItem)
-async def get_ust_yield_latest_single(
-    tenor: str,
-    db: AsyncSession = Depends(get_db),
-    api_key: str = Depends(verify_api_key),
-):
-    """
-    Returns the latest US Treasury yield rate for a single tenor.
-    """
-    tenor = tenor.upper()
-
-    query = select(UstYieldRate).where(
-        UstYieldRate.tenor == tenor
-    ).order_by(UstYieldRate.date.desc()).limit(1)
-
-    result = await db.execute(query)
-    row = result.scalar_one_or_none()
-
-    if not row:
-        raise HTTPException(status_code=404, detail=f"No US Treasury yield rate found for tenor: {tenor}")
-
-    return UstYieldLatestItem(
-        tenor=row.tenor,           # type: ignore[arg-type]
-        date=row.date,             # type: ignore[arg-type]
-        rate=row.rate,             # type: ignore[arg-type]
-    )
 
 
 # --- Commodities ---
@@ -4416,38 +4109,6 @@ async def get_commodity_latest_batch(
     return CommodityLatestResponse(data=items, count=len(items))
 
 
-@app.get("/commodity/latest/{symbol}", response_model=CommodityLatestItem)
-async def get_commodity_latest_single(
-    symbol: str,
-    db: AsyncSession = Depends(get_db),
-    api_key: str = Depends(verify_api_key),
-):
-    """
-    Returns the latest OHLCV record for a single commodity,
-    enriched with embedded metadata (name, category).
-    """
-    query = select(CommodityEOD).where(
-        CommodityEOD.symbol == symbol
-    ).order_by(CommodityEOD.date.desc()).limit(1)
-
-    result = await db.execute(query)
-    row = result.scalar_one_or_none()
-
-    if not row:
-        raise HTTPException(status_code=404, detail=f"No commodity found with symbol: {symbol}")
-
-    return CommodityLatestItem(
-        symbol=row.symbol,          # type: ignore[arg-type]
-        name=row.name,              # type: ignore[arg-type]
-        category=row.category,      # type: ignore[arg-type]
-        date=row.date,              # type: ignore[arg-type]
-        open=row.open,              # type: ignore[arg-type]
-        high=row.high,              # type: ignore[arg-type]
-        low=row.low,                # type: ignore[arg-type]
-        close=row.close,            # type: ignore[arg-type]
-        adjusted_close=row.adjusted_close,  # type: ignore[arg-type]
-        volume=row.volume,          # type: ignore[arg-type]
-    )
 
 
 @app.get("/commodity/symbols/", response_model=CommoditySymbolResponse)

@@ -117,7 +117,6 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/?tenor=10Y&s
 | `GET /ohlcv/latest_close/` | `tickers=AAPL,MSFT,GOOGL` | Latest close per ticker (DB) | No |
 | `GET /ohlcv/latest_close/` | *(omit tickers)* | Latest close for all ~12,500 tickers (DB) | No |
 | `GET /ohlcv/latest/` | `tickers=AAPL,MSFT,GOOGL` | Real-time OHLCV from EODHD | No |
-| `GET /ohlcv/latest/{ticker}` | — | Real-time OHLCV from EODHD for a single ticker | No |
 | `GET /ohlcv/` | `tickers=AAPL,MSFT,GOOGL` | Paginated history per ticker | No |
 | `GET /sp500/latest/` | `tickers=AAPL,MSFT,GOOGL` | Latest S&P 500 OHLCV | Yes |
 | `GET /sp500/latest/` | *(omit tickers)* | Latest for all 503 constituents | Yes |
@@ -128,13 +127,11 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/?tenor=10Y&s
 | `GET /etf/latest_close/` | *(omit tickers)* | Latest close for all ETFs (DB) | Yes |
 | `GET /etf/latest_close/{ticker}` | — | Latest close for a single ETF (DB) | Yes |
 | `GET /etf/latest/` | `tickers=SPY,QQQ,IWM` | Real-time ETF OHLCV from EODHD | No |
-| `GET /etf/latest/{ticker}` | — | Real-time ETF OHLCV from EODHD for a single ETF | No |
 | `GET /index/` | `tickers=GSPC,DJI,IXIC` | Paginated index history | No |
 | `GET /index/latest_close/` | `tickers=GSPC,DJI,IXIC` | Latest index close (DB) | Yes |
 | `GET /index/latest_close/` | *(omit tickers)* | Latest close for all indices (DB) | Yes |
 | `GET /index/latest_close/{ticker}` | — | Latest close for a single index (DB) | Yes |
 | `GET /index/latest/` | `tickers=GSPC,DJI,IXIC` | Real-time index OHLCV from EODHD | No |
-| `GET /index/latest/{ticker}` | — | Real-time index OHLCV from EODHD for a single index | No |
 | `GET /gov-bond/` | `tickers=US10Y,UK10Y,DE10Y` | Paginated gov bond history | No |
 | `GET /gov-bond/` | `countries=US,DE,JP` | Paginated gov bond history by country | No |
 | `GET /gov-bond/latest_close/` | `tickers=US10Y,UK10Y,DE10Y` | Latest gov bond close (DB) | Yes |
@@ -142,41 +139,33 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/?tenor=10Y&s
 | `GET /gov-bond/latest_close/` | *(omit tickers)* | Latest close for all 117 gov bonds (DB) | Yes |
 | `GET /gov-bond/latest_close/{ticker}` | — | Latest close for a single gov bond (DB) | Yes |
 | `GET /gov-bond/latest/` | `tickers=US10Y,UK10Y,DE10Y` | Real-time gov bond OHLCV from EODHD | No |
-| `GET /gov-bond/latest/{ticker}` | — | Real-time gov bond OHLCV from EODHD for a single bond | No |
 | `GET /fx/` | `tickers=EURUSD,GBPUSD,USDJPY` | Paginated FX history | No |
 | `GET /fx/latest_close/` | `tickers=EURUSD,GBPUSD,USDJPY` | Latest FX close (DB) | Yes |
 | `GET /fx/latest_close/` | *(omit tickers)* | Latest close for all FX pairs (DB) | Yes |
 | `GET /fx/latest_close/{ticker}` | — | Latest close for a single FX pair (DB) | Yes |
 | `GET /fx/latest/` | `tickers=EURUSD,GBPUSD,USDJPY` | Real-time FX OHLCV from EODHD | No |
-| `GET /fx/latest/{ticker}` | — | Real-time FX OHLCV from EODHD for a single pair | No |
 | `GET /uk/` | `tickers=AZN,SHEL,HSBA` | Paginated UK stock history | No |
 | `GET /uk/latest_close/` | `tickers=AZN,SHEL,HSBA` | Latest UK stock close (DB) | Yes |
 | `GET /uk/latest_close/` | *(omit tickers)* | Latest close for all UK stocks (DB) | Yes |
 | `GET /uk/latest_close/{ticker}` | — | Latest close for a single UK stock (DB) | Yes |
 | `GET /uk/latest/` | `tickers=AZN,SHEL,HSBA` | Real-time UK stock OHLCV from EODHD | No |
-| `GET /uk/latest/{ticker}` | — | Real-time UK stock OHLCV from EODHD for a single stock | No |
 | `GET /crypto/` | `tickers=BTC-USD,ETH-USD,SOL-USD` | Paginated crypto history | No |
 | `GET /crypto/latest_close/` | `tickers=BTC-USD,ETH-USD,SOL-USD` | Latest crypto close (DB) | Yes |
 | `GET /crypto/latest_close/` | *(omit tickers)* | Latest close for all crypto assets (DB) | Yes |
 | `GET /crypto/latest_close/{ticker}` | — | Latest close for a single crypto asset (DB) | Yes |
 | `GET /crypto/latest/` | `tickers=BTC-USD,ETH-USD,SOL-USD` | Real-time crypto OHLCV from EODHD | No |
-| `GET /crypto/latest/{ticker}` | — | Real-time crypto OHLCV from EODHD for a single asset | No |
 | `GET /ust/bill/` | `tenor=13WK` or `tenors=4WK,13WK,26WK` | Paginated bill rate history | No |
 | `GET /ust/bill/latest/` | `tenors=4WK,13WK,26WK` | Latest bill rates per tenor | No |
 | `GET /ust/bill/latest/` | *(omit tenors)* | Latest for all 7 bill tenors | No |
-| `GET /ust/bill/latest/{tenor}` | — | Latest for a single bill tenor | No |
 | `GET /ust/long-term/` | `rate_type=BC_20year` or `rate_types=BC_20year,Over_10_Years` | Paginated long-term rate history | No |
 | `GET /ust/long-term/latest/` | `rate_types=BC_20year,Over_10_Years` | Latest long-term rates per type | No |
 | `GET /ust/long-term/latest/` | *(omit rate_types)* | Latest for all 3 long-term rate types | No |
-| `GET /ust/long-term/latest/{rate_type}` | — | Latest for a single long-term rate type | No |
 | `GET /ust/real-yield/` | `tenor=10Y` or `tenors=5Y,10Y,30Y` | Paginated real yield history | No |
 | `GET /ust/real-yield/latest/` | `tenors=5Y,10Y,30Y` | Latest real yield rates per tenor | No |
 | `GET /ust/real-yield/latest/` | *(omit tenors)* | Latest for all 5 real yield tenors | No |
-| `GET /ust/real-yield/latest/{tenor}` | — | Latest for a single real yield tenor | No |
 | `GET /ust/yield/` | `tenor=10Y` or `tenors=2Y,5Y,10Y,30Y` | Paginated yield rate history | No |
 | `GET /ust/yield/latest/` | `tenors=2Y,5Y,10Y,30Y` | Latest yield rates per tenor | No |
 | `GET /ust/yield/latest/` | *(omit tenors)* | Latest for all 14 yield tenors | No |
-| `GET /ust/yield/latest/{tenor}` | — | Latest for a single yield tenor | No |
 
 ## S&P 500 Endpoints
 
@@ -326,7 +315,6 @@ See [DEVELOPER.md](./DEVELOPER.md) for full documentation including CTE examples
 | GET | `/ohlcv/latest_close/` | Batch get latest close from DB (specific tickers or all) |
 | GET | `/ohlcv/latest_close/{ticker}` | Get latest close from DB for a single ticker |
 | GET | `/ohlcv/latest/` | Batch get real-time OHLCV from EODHD (requires `tickers`) |
-| GET | `/ohlcv/latest/{ticker}` | Get real-time OHLCV from EODHD for a single ticker |
 | GET | `/ohlcv/stats/{ticker}` | Get statistics for a ticker (52-week high/low) |
 | GET | `/tickers/` | List all ~12,500 tickers |
 | GET | `/ohlcv/{id}` | Get record by UUID |
@@ -351,7 +339,6 @@ See [DEVELOPER.md](./DEVELOPER.md) for full documentation including CTE examples
 | GET | `/etf/latest_close/` | Batch get latest ETF close from DB (specific tickers or all) |
 | GET | `/etf/latest_close/{ticker}` | Get latest ETF close from DB for a single ETF |
 | GET | `/etf/latest/` | Batch get real-time ETF OHLCV from EODHD (requires `tickers`) |
-| GET | `/etf/latest/{ticker}` | Get real-time ETF OHLCV from EODHD for a single ETF |
 
 ### Index Data
 
@@ -361,7 +348,6 @@ See [DEVELOPER.md](./DEVELOPER.md) for full documentation including CTE examples
 | GET | `/index/latest_close/` | Batch get latest index close from DB (specific tickers or all) |
 | GET | `/index/latest_close/{ticker}` | Get latest index close from DB for a single index |
 | GET | `/index/latest/` | Batch get real-time index OHLCV from EODHD (requires `tickers`) |
-| GET | `/index/latest/{ticker}` | Get real-time index OHLCV from EODHD for a single index |
 
 ### Government Bond Data
 
@@ -390,7 +376,6 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/?countries=US
 | GET | `/gov-bond/latest_close/` | Batch get latest gov bond close from DB (specific tickers, countries, or all) |
 | GET | `/gov-bond/latest_close/{ticker}` | Get latest gov bond close from DB for a single government bond |
 | GET | `/gov-bond/latest/` | Batch get real-time gov bond OHLCV from EODHD (requires `tickers`) |
-| GET | `/gov-bond/latest/{ticker}` | Get real-time gov bond OHLCV from EODHD for a single bond |
 
 ### Foreign Exchange (FX) Data
 
@@ -410,7 +395,6 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/fx/latest/?tickers=EUR
 | GET | `/fx/latest_close/` | Batch get latest FX close from DB (specific tickers or all) |
 | GET | `/fx/latest_close/{ticker}` | Get latest FX close from DB for a single pair |
 | GET | `/fx/latest/` | Batch get real-time FX OHLCV from EODHD (requires `tickers`) |
-| GET | `/fx/latest/{ticker}` | Get real-time FX OHLCV from EODHD for a single pair |
 
 ### UK Stock (LSE) Data
 
@@ -432,7 +416,6 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/uk/latest/?tickers=AZN
 | GET | `/uk/latest_close/` | Batch get latest UK stock close from DB (specific tickers or all) |
 | GET | `/uk/latest_close/{ticker}` | Get latest UK stock close from DB for a single stock |
 | GET | `/uk/latest/` | Batch get real-time UK stock OHLCV from EODHD (requires `tickers`) |
-| GET | `/uk/latest/{ticker}` | Get real-time UK stock OHLCV from EODHD for a single stock |
 
 ### Crypto Data
 
@@ -454,7 +437,6 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/crypto/latest/?tickers
 | GET | `/crypto/latest_close/` | Batch get latest crypto close from DB (specific tickers or all) |
 | GET | `/crypto/latest_close/{ticker}` | Get latest crypto close from DB for a single asset |
 | GET | `/crypto/latest/` | Batch get real-time crypto OHLCV from EODHD (requires `tickers`) |
-| GET | `/crypto/latest/{ticker}` | Get real-time crypto OHLCV from EODHD for a single asset |
 
 ### US Treasury Rate Data
 
@@ -483,16 +465,12 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/?tenor=10Y&s
 |--------|----------|-------------|
 | GET | `/ust/bill/` | List US Treasury bill rates with filters (supports `tenor`/`tenors`) |
 | GET | `/ust/bill/latest/` | Batch get latest bill rates (specific tenors or all) |
-| GET | `/ust/bill/latest/{tenor}` | Get latest bill rate for a single tenor |
 | GET | `/ust/long-term/` | List US Treasury long-term rates with filters (supports `rate_type`/`rate_types`) |
 | GET | `/ust/long-term/latest/` | Batch get latest long-term rates (specific rate types or all) |
-| GET | `/ust/long-term/latest/{rate_type}` | Get latest long-term rate for a single rate type |
 | GET | `/ust/real-yield/` | List US Treasury real yield rates with filters (supports `tenor`/`tenors`) |
 | GET | `/ust/real-yield/latest/` | Batch get latest real yield rates (specific tenors or all) |
-| GET | `/ust/real-yield/latest/{tenor}` | Get latest real yield rate for a single tenor |
 | GET | `/ust/yield/` | List US Treasury yield curve rates with filters (supports `tenor`/`tenors`) |
 | GET | `/ust/yield/latest/` | Batch get latest yield rates (specific tenors or all) |
-| GET | `/ust/yield/latest/{tenor}` | Get latest yield rate for a single tenor |
 
 #### Distinct Values
 

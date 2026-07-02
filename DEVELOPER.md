@@ -270,43 +270,9 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/latest_cl
 
 Returns real-time OHLCV data from EODHD's live API. These endpoints do not read from the database — they make a direct call to `https://eodhd.com/api/real-time/{TICKER}.{EXCHANGE}`.
 
-### Single Ticker
+### Get Real-Time OHLCV
 
-**Endpoint:** `GET /ohlcv/latest/{ticker}`
-
-#### Path Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `ticker` | string | Ticker symbol (e.g., `AAPL`) |
-
-#### Example Request
-
-```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/latest/AAPL?api_key=YOUR_API_KEY"
-```
-
-#### Example Response
-
-```json
-{
-  "ticker": "AAPL",
-  "exchange": "US",
-  "timestamp": 1746626400,
-  "gmtoffset": 0,
-  "datetime": "2026-05-07T20:00:00",
-  "open": 289.27,
-  "high": 292.13,
-  "low": 285.78,
-  "close": 287.44,
-  "adjusted_close": 287.44,
-  "volume": 40410371
-}
-```
-
-### Batch Tickers
-
-Returns real-time OHLCV data for multiple tickers. The `tickers` parameter is **required**.
+Returns real-time OHLCV data for one or more tickers from EODHD's live API. The `tickers` parameter is **required**.
 
 **Endpoint:** `GET /ohlcv/latest/`
 
@@ -849,15 +815,9 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/etf/latest_clos
 
 ### Get Real-Time ETF OHLCV (EODHD)
 
-Returns real-time OHLCV data from EODHD for ETFs. The `tickers` parameter is **required** for the batch endpoint.
+Returns real-time OHLCV data from EODHD for ETFs. The `tickers` parameter is **required**.
 
-**Endpoint (single):** `GET /etf/latest/{ticker}`
-
-```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/etf/latest/SPY?api_key=YOUR_API_KEY"
-```
-
-**Endpoint (batch):** `GET /etf/latest/`
+**Endpoint:** `GET /etf/latest/`
 
 ```bash
 curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/etf/latest/?api_key=YOUR_API_KEY&tickers=SPY,QQQ,IWM"
@@ -986,15 +946,9 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/index/latest_cl
 
 ### Get Real-Time Index OHLCV (EODHD)
 
-Returns real-time OHLCV data from EODHD for indices. The `tickers` parameter is **required** for the batch endpoint.
+Returns real-time OHLCV data from EODHD for indices. The `tickers` parameter is **required**.
 
-**Endpoint (single):** `GET /index/latest/{ticker}`
-
-```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/index/latest/GSPC?api_key=YOUR_API_KEY"
-```
-
-**Endpoint (batch):** `GET /index/latest/`
+**Endpoint:** `GET /index/latest/`
 
 ```bash
 curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/index/latest/?api_key=YOUR_API_KEY&tickers=GSPC,DJI"
@@ -1232,15 +1186,9 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest
 
 ### Get Real-Time Government Bond OHLCV (EODHD)
 
-Returns real-time OHLCV data from EODHD for government bonds. The `tickers` parameter is **required** for the batch endpoint.
+Returns real-time OHLCV data from EODHD for government bonds. The `tickers` parameter is **required**.
 
-**Endpoint (single):** `GET /gov-bond/latest/{ticker}`
-
-```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest/US10Y?api_key=YOUR_API_KEY"
-```
-
-**Endpoint (batch):** `GET /gov-bond/latest/`
+**Endpoint:** `GET /gov-bond/latest/`
 
 ```bash
 curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest/?api_key=YOUR_API_KEY&tickers=US10Y,UK10Y,DE10Y"
@@ -1490,15 +1438,9 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/fx/latest_close
 
 ### Get Real-Time FX OHLCV (EODHD)
 
-Returns real-time OHLCV data from EODHD for FX pairs. The `tickers` parameter is **required** for the batch endpoint.
+Returns real-time OHLCV data from EODHD for FX pairs. The `tickers` parameter is **required**.
 
-**Endpoint (single):** `GET /fx/latest/{ticker}`
-
-```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/fx/latest/EURUSD?api_key=YOUR_API_KEY"
-```
-
-**Endpoint (batch):** `GET /fx/latest/`
+**Endpoint:** `GET /fx/latest/`
 
 ```bash
 curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/fx/latest/?api_key=YOUR_API_KEY&tickers=EURUSD,GBPUSD,USDJPY"
@@ -1744,15 +1686,9 @@ Returns the latest record for every crypto asset in the database.
 
 ### Get Real-Time Crypto OHLCV (EODHD)
 
-Returns real-time OHLCV data from EODHD for crypto assets. The `tickers` parameter is **required** for the batch endpoint.
+Returns real-time OHLCV data from EODHD for crypto assets. The `tickers` parameter is **required**.
 
-**Endpoint (single):** `GET /crypto/latest/{ticker}`
-
-```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/crypto/latest/BTC-USD?api_key=YOUR_API_KEY"
-```
-
-**Endpoint (batch):** `GET /crypto/latest/`
+**Endpoint:** `GET /crypto/latest/`
 
 ```bash
 curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/crypto/latest/?api_key=YOUR_API_KEY&tickers=BTC-USD,ETH-USD,SOL-USD"
@@ -2197,15 +2133,9 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/uk/latest_close
 
 ### Get Real-Time UK Stock OHLCV (EODHD)
 
-Returns real-time OHLCV data from EODHD for UK stocks. The `tickers` parameter is **required** for the batch endpoint.
+Returns real-time OHLCV data from EODHD for UK stocks. The `tickers` parameter is **required**.
 
-**Endpoint (single):** `GET /uk/latest/{ticker}`
-
-```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/uk/latest/AZN?api_key=YOUR_API_KEY"
-```
-
-**Endpoint (batch):** `GET /uk/latest/`
+**Endpoint:** `GET /uk/latest/`
 
 ```bash
 curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/uk/latest/?api_key=YOUR_API_KEY&tickers=AZN,SHEL,HSBA"
@@ -2301,73 +2231,21 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ftse100/?api_ke
 
 ### Get Latest FTSE 100 Data
 
-#### Single FTSE 100 Constituent
-
-Returns the most recent OHLCV record for a single FTSE 100 constituent, enriched with metadata.
-
-**Endpoint:** `GET /ftse100/latest/{ticker}`
-
-##### Path Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `ticker` | string | FTSE 100 ticker symbol (e.g., `AZN`). Case-sensitive. |
-
-##### Example Request
-
-```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ftse100/latest/AZN?api_key=YOUR_API_KEY"
-```
-
-##### Example Response
-
-```json
-{
-  "ticker": "AZN",
-  "name": "AstraZeneca PLC",
-  "sector": "Healthcare",
-  "industry": "Drug Manufacturers - General",
-  "isin": "GB0009895292",
-  "currency": "GBP",
-  "date": "2026-05-13",
-  "open": "12450.0000",
-  "high": "12520.0000",
-  "low": "12380.0000",
-  "close": "12480.0000",
-  "adjusted_close": "12480.0000",
-  "volume": 3256789
-}
-```
-
-##### Error Response — Ticker Not Found
-
-```json
-{
-  "detail": "No FTSE 100 constituent found with ticker: INVALID"
-}
-```
-
-#### Batch / All FTSE 100 Constituents
-
 Returns the most recent OHLCV record for one or more FTSE 100 constituents. If no tickers are specified, returns the latest record for **all** FTSE 100 constituents. Uses LATERAL joins for efficient per-ticker latest-row lookups.
 
 **Endpoint:** `GET /ftse100/latest/`
 
-> **Note:** This endpoint must be called with the trailing slash. Without it, FastAPI will route the request to `GET /ftse100/latest/{ticker}`.
-
 > **URL Pattern — Batch vs Single Ticker:**
 >
 > ✅ **Batch (specific tickers):** `GET /ftse100/latest/?tickers=AZN,SHEL,HSBA`
+>
+> ✅ **Single ticker:** `GET /ftse100/latest/?tickers=AZN`
 >
 > ✅ **Filter by sector:** `GET /ftse100/latest/?sector=Healthcare`
 >
 > ✅ **Filter by industry:** `GET /ftse100/latest/?industry=Drug Manufacturers - General`
 >
 > ✅ **All FTSE 100 constituents:** `GET /ftse100/latest/`
->
-> ✅ **Single ticker (path param):** `GET /ftse100/latest/AZN`
->
-> ❌ **Wrong:** `GET /ftse100/latest/AZN,SHEL` — commas not allowed in path params
 
 ##### Query Parameters
 
@@ -2536,64 +2414,17 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/bill/?api_k
 
 ### Get Latest US Treasury Bill Rates
 
-#### Single Tenor
-
-Returns the most recent bill rate record for a single tenor.
-
-**Endpoint:** `GET /ust/bill/latest/{tenor}`
-
-##### Path Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `tenor` | string | Bill tenor (e.g., `13WK`). Case-insensitive. |
-
-##### Example Request
-
-```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/bill/latest/13WK?api_key=YOUR_API_KEY"
-```
-
-##### Example Response
-
-```json
-{
-  "tenor": "13WK",
-  "date": "2026-05-07",
-  "discount": "4.2650",
-  "coupon": "4.3550",
-  "avg_discount": "4.2650",
-  "avg_coupon": "4.3550",
-  "maturity_date": "2026-08-06",
-  "cusip": "US912796ZG39"
-}
-```
-
-##### Error Response — Tenor Not Found
-
-```json
-{
-  "detail": "No US Treasury bill rate found for tenor: INVALID"
-}
-```
-
-#### Batch / All Tenors
-
 Returns the most recent bill rate record for one or more tenors. If no tenors are specified, returns the latest record for **all** bill tenors. Uses `DISTINCT ON` for efficient per-tenor latest-row lookups.
 
 **Endpoint:** `GET /ust/bill/latest/`
-
-> **Note:** This endpoint must be called with the trailing slash. Without it, FastAPI will route the request to `GET /ust/bill/latest/{tenor}`.
 
 > **URL Pattern — Batch vs Single Tenor:**
 >
 > ✅ **Batch (specific tenors):** `GET /ust/bill/latest/?tenors=4WK,13WK,26WK`
 >
+> ✅ **Single tenor:** `GET /ust/bill/latest/?tenors=13WK`
+>
 > ✅ **All tenors:** `GET /ust/bill/latest/`
->
-> ✅ **Single tenor (path param):** `GET /ust/bill/latest/13WK`
->
-> ❌ **Wrong:** `GET /ust/bill/latest/4WK,13WK` — commas not allowed in path params
 
 ##### Query Parameters
 
@@ -2716,52 +2547,9 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/long-term/?
 
 ### Get Latest US Treasury Long-Term Rates
 
-#### Single Rate Type
-
-Returns the most recent long-term rate record for a single rate type.
-
-**Endpoint:** `GET /ust/long-term/latest/{rate_type}`
-
-> **Warning:** The `rate_type` path parameter is **case-sensitive**. Use exact values: `BC_20year`, `Over_10_Years`, `Real_Rate`.
-
-##### Path Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `rate_type` | string | Long-term rate type (e.g., `BC_20year`). Case-sensitive. |
-
-##### Example Request
-
-```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/long-term/latest/BC_20year?api_key=YOUR_API_KEY"
-```
-
-##### Example Response
-
-```json
-{
-  "rate_type": "BC_20year",
-  "date": "2026-05-07",
-  "rate": "4.7100",
-  "extrapolation_factor": "1.0000"
-}
-```
-
-##### Error Response — Rate Type Not Found
-
-```json
-{
-  "detail": "No US Treasury long-term rate found for rate type: invalid_type"
-}
-```
-
-#### Batch / All Rate Types
-
 Returns the most recent long-term rate record for one or more rate types. If no rate types are specified, returns the latest record for **all** long-term rate types. Uses `DISTINCT ON` for efficient per-rate-type latest-row lookups.
 
 **Endpoint:** `GET /ust/long-term/latest/`
-
-> **Note:** This endpoint must be called with the trailing slash. Without it, FastAPI will route the request to `GET /ust/long-term/latest/{rate_type}`.
 
 > **Warning:** The `rate_types` query parameter is **case-sensitive**. Use exact values: `BC_20year`, `Over_10_Years`, `Real_Rate`.
 
@@ -2865,49 +2653,9 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/real-yield/
 
 ### Get Latest US Treasury Real Yield Rates
 
-#### Single Tenor
-
-Returns the most recent real yield rate record for a single tenor.
-
-**Endpoint:** `GET /ust/real-yield/latest/{tenor}`
-
-##### Path Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `tenor` | string | Real yield tenor (e.g., `10Y`). Case-insensitive. |
-
-##### Example Request
-
-```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/real-yield/latest/10Y?api_key=YOUR_API_KEY"
-```
-
-##### Example Response
-
-```json
-{
-  "tenor": "10Y",
-  "date": "2026-05-07",
-  "rate": "2.0800"
-}
-```
-
-##### Error Response — Tenor Not Found
-
-```json
-{
-  "detail": "No US Treasury real yield rate found for tenor: INVALID"
-}
-```
-
-#### Batch / All Tenors
-
 Returns the most recent real yield rate record for one or more tenors. If no tenors are specified, returns the latest record for **all** real yield tenors. Uses `DISTINCT ON` for efficient per-tenor latest-row lookups.
 
 **Endpoint:** `GET /ust/real-yield/latest/`
-
-> **Note:** This endpoint must be called with the trailing slash. Without it, FastAPI will route the request to `GET /ust/real-yield/latest/{tenor}`.
 
 ##### Query Parameters
 
@@ -3012,49 +2760,9 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/?api_
 
 ### Get Latest US Treasury Yield Rates
 
-#### Single Tenor
-
-Returns the most recent yield curve rate record for a single tenor.
-
-**Endpoint:** `GET /ust/yield/latest/{tenor}`
-
-##### Path Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `tenor` | string | Yield tenor (e.g., `10Y`). Case-insensitive. |
-
-##### Example Request
-
-```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/latest/10Y?api_key=YOUR_API_KEY"
-```
-
-##### Example Response
-
-```json
-{
-  "tenor": "10Y",
-  "date": "2026-05-07",
-  "rate": "4.2900"
-}
-```
-
-##### Error Response — Tenor Not Found
-
-```json
-{
-  "detail": "No US Treasury yield rate found for tenor: INVALID"
-}
-```
-
-#### Batch / All Tenors
-
 Returns the most recent yield curve rate record for one or more tenors. If no tenors are specified, returns the latest record for **all** yield tenors. Uses `DISTINCT ON` for efficient per-tenor latest-row lookups.
 
 **Endpoint:** `GET /ust/yield/latest/`
-
-> **Note:** This endpoint must be called with the trailing slash. Without it, FastAPI will route the request to `GET /ust/yield/latest/{tenor}`.
 
 ##### Query Parameters
 
@@ -3832,7 +3540,7 @@ Used by: `GET /uk/latest_close/`
 
 ### Ftse100LatestItem
 
-Used by: `GET /ftse100/latest/`, `GET /ftse100/latest/{ticker}`, nested inside `Ftse100LatestResponse`
+Used by: `GET /ftse100/latest/`, nested inside `Ftse100LatestResponse`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -3931,7 +3639,7 @@ Used by: `GET /ust/bill/`
 
 ### UstBillLatestItem
 
-Used by: `GET /ust/bill/latest/{tenor}`, nested inside `UstBillLatestResponse`
+Used by: `GET /ust/bill/latest/`, nested inside `UstBillLatestResponse`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -3985,7 +3693,7 @@ Used by: `GET /ust/long-term/`
 
 ### UstLongTermLatestItem
 
-Used by: `GET /ust/long-term/latest/{rate_type}`, nested inside `UstLongTermLatestResponse`
+Used by: `GET /ust/long-term/latest/`, nested inside `UstLongTermLatestResponse`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -4032,7 +3740,7 @@ Used by: `GET /ust/real-yield/`
 
 ### UstRealYieldLatestItem
 
-Used by: `GET /ust/real-yield/latest/{tenor}`, nested inside `UstRealYieldLatestResponse`
+Used by: `GET /ust/real-yield/latest/`, nested inside `UstRealYieldLatestResponse`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -4078,7 +3786,7 @@ Used by: `GET /ust/yield/`
 
 ### UstYieldLatestItem
 
-Used by: `GET /ust/yield/latest/{tenor}`, nested inside `UstYieldLatestResponse`
+Used by: `GET /ust/yield/latest/`, nested inside `UstYieldLatestResponse`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -4131,7 +3839,7 @@ Used by: `GET /commodity/`
 
 ### CommodityLatestItem
 
-Used by: `GET /commodity/latest/`, `GET /commodity/latest/{symbol}`, nested inside `CommodityLatestResponse`
+Used by: `GET /commodity/latest/`, nested inside `CommodityLatestResponse`
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -4262,68 +3970,19 @@ curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/commodity/?api_
 
 ### Get Latest Commodity Data
 
-#### Single Commodity
-
-Returns the most recent OHLCV record for a single commodity, enriched with embedded metadata (name, category).
-
-**Endpoint:** `GET /commodity/latest/{symbol}`
-
-##### Path Parameters
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `symbol` | string | Commodity symbol (e.g., `LGOc3`). Case-sensitive. |
-
-##### Example Request
-
-```bash
-curl -X GET "https://ohlcv-api-832081557693.europe-west2.run.app/commodity/latest/LGOc3?api_key=YOUR_API_KEY"
-```
-
-##### Example Response
-
-```json
-{
-  "symbol": "LGOc3",
-  "name": "Crude Oil (WTI)",
-  "category": "Energy",
-  "date": "2026-05-13",
-  "open": "78.5000",
-  "high": "79.2000",
-  "low": "77.8000",
-  "close": "78.9000",
-  "adjusted_close": "78.9000",
-  "volume": 456789
-}
-```
-
-##### Error Response — Symbol Not Found
-
-```json
-{
-  "detail": "No commodity found with symbol: INVALID"
-}
-```
-
-#### Batch / All Commodities
-
 Returns the most recent OHLCV record for one or more commodities. If no symbols are specified, returns the latest record for **all** commodities. Uses `DISTINCT ON` for efficient per-symbol latest-row lookups.
 
 **Endpoint:** `GET /commodity/latest/`
-
-> **Note:** This endpoint must be called with the trailing slash. Without it, FastAPI will route the request to `GET /commodity/latest/{symbol}`.
 
 > **URL Pattern — Batch vs Single Symbol:**
 >
 > ✅ **Batch (specific symbols):** `GET /commodity/latest/?symbols=LGOc3,NICKEL,GDK`
 >
+> ✅ **Single symbol:** `GET /commodity/latest/?symbols=LGOc3`
+>
 > ✅ **Filter by category:** `GET /commodity/latest/?category=Energy`
 >
 > ✅ **All commodities:** `GET /commodity/latest/`
->
-> ✅ **Single symbol (path param):** `GET /commodity/latest/LGOc3`
->
-> ❌ **Wrong:** `GET /commodity/latest/LGOc3,NICKEL` — commas not allowed in path params
 
 ##### Query Parameters
 
@@ -4529,7 +4188,6 @@ The S&P 500 endpoints add two features the plain OHLCV endpoints don't provide:
 | `GET /ohlcv/latest_close/` | *(omit tickers)* | Latest close for all ~12,500 tickers (DB) | No |
 | `GET /ohlcv/latest_close/{ticker}` | — | Latest close for a single ticker (DB) | No |
 | `GET /ohlcv/latest/` | `tickers=AAPL,MSFT,GOOGL` | Real-time OHLCV per ticker (EODHD) | No |
-| `GET /ohlcv/latest/{ticker}` | — | Real-time OHLCV for a single ticker (EODHD) | No |
 | `GET /ohlcv/` | `tickers=AAPL,MSFT,GOOGL` | Paginated history per ticker | No |
 | `GET /sp500/latest/` | `tickers=AAPL,MSFT,GOOGL` | Latest S&P 500 OHLCV | Yes |
 | `GET /sp500/latest/` | *(omit tickers)* | Latest for all 503 constituents | Yes |
@@ -4539,13 +4197,11 @@ The S&P 500 endpoints add two features the plain OHLCV endpoints don't provide:
 | `GET /etf/latest_close/` | *(omit tickers)* | Latest close for all ~5,500 ETFs (DB) | Yes |
 | `GET /etf/latest_close/{ticker}` | — | Latest close for a single ETF (DB) | Yes |
 | `GET /etf/latest/` | `tickers=SPY,QQQ,IWM` | Real-time ETF OHLCV (EODHD) | No |
-| `GET /etf/latest/{ticker}` | — | Real-time ETF OHLCV for a single ETF (EODHD) | No |
 | `GET /etf/` | `tickers=SPY,QQQ,IWM` | Paginated ETF history | No |
 | `GET /index/latest_close/` | `tickers=GSPC,DJI,IXIC` | Latest index close (DB) | Yes |
 | `GET /index/latest_close/` | *(omit tickers)* | Latest close for all ~1,600 indices (DB) | Yes |
 | `GET /index/latest_close/{ticker}` | — | Latest close for a single index (DB) | Yes |
 | `GET /index/latest/` | `tickers=GSPC,DJI,IXIC` | Real-time index OHLCV (EODHD) | No |
-| `GET /index/latest/{ticker}` | — | Real-time index OHLCV for a single index (EODHD) | No |
 | `GET /index/` | `tickers=GSPC,DJI,IXIC` | Paginated index history | No |
 | `GET /gov-bond/` | `tickers=US10Y,UK10Y,DE10Y` | Paginated gov bond history | No |
 | `GET /gov-bond/` | `countries=US,DE,JP` | Paginated gov bond history by country | No |
@@ -4554,7 +4210,6 @@ The S&P 500 endpoints add two features the plain OHLCV endpoints don't provide:
 | `GET /gov-bond/latest_close/` | *(omit tickers)* | Latest close for all 117 gov bonds (DB) | Yes |
 | `GET /gov-bond/latest_close/{ticker}` | — | Latest close for a single gov bond (DB) | Yes |
 | `GET /gov-bond/latest/` | `tickers=US10Y,UK10Y,DE10Y` | Real-time gov bond OHLCV (EODHD) | No |
-| `GET /gov-bond/latest/{ticker}` | — | Real-time gov bond OHLCV for a single bond (EODHD) | No |
 | `GET /fx/` | `tickers=EURUSD,GBPUSD,USDJPY` | Paginated FX history | No |
 | `GET /fx/` | `base_currency=EUR` | Paginated FX history by base currency | No |
 | `GET /fx/` | `quote_currency=USD` | Paginated FX history by quote currency | No |
@@ -4564,7 +4219,6 @@ The S&P 500 endpoints add two features the plain OHLCV endpoints don't provide:
 | `GET /fx/latest_close/` | *(omit tickers)* | Latest close for all 948 FX pairs (DB) | Yes |
 | `GET /fx/latest_close/{ticker}` | — | Latest close for a single FX pair (DB) | Yes |
 | `GET /fx/latest/` | `tickers=EURUSD,GBPUSD,USDJPY` | Real-time FX OHLCV (EODHD) | No |
-| `GET /fx/latest/{ticker}` | — | Real-time FX OHLCV for a single pair (EODHD) | No |
 | `GET /crypto/` | `tickers=BTC-USD,ETH-USD,SOL-USD` | Paginated crypto history | No |
 | `GET /crypto/` | `base_currency=BTC` | Paginated crypto history by base currency | No |
 | `GET /crypto/` | `quote_currency=USD` | Paginated crypto history by quote currency | No |
@@ -4574,7 +4228,6 @@ The S&P 500 endpoints add two features the plain OHLCV endpoints don't provide:
 | `GET /crypto/latest_close/` | *(omit tickers)* | Latest close for all crypto assets (DB) | Yes |
 | `GET /crypto/latest_close/{ticker}` | — | Latest close for a single crypto asset (DB) | Yes |
 | `GET /crypto/latest/` | `tickers=BTC-USD,ETH-USD,SOL-USD` | Real-time crypto OHLCV (EODHD) | No |
-| `GET /crypto/latest/{ticker}` | — | Real-time crypto OHLCV for a single asset (EODHD) | No |
 | `GET /crypto/history/` | `tickers=BTC-USD,ETH-USD` | Paginated crypto history with metadata | Yes |
 | `GET /crypto/history/` | *(omit tickers)* | Paginated history for all crypto assets | Yes |
 | `GET /crypto/top100/` | — | Top 100 crypto by volume with notional_value | Yes |
@@ -4588,7 +4241,6 @@ The S&P 500 endpoints add two features the plain OHLCV endpoints don't provide:
 | `GET /uk/latest_close/` | *(omit tickers)* | Latest close for all ~3,965 LSE stocks (DB) | Yes |
 | `GET /uk/latest_close/{ticker}` | — | Latest close for a single UK stock (DB) | Yes |
 | `GET /uk/latest/` | `tickers=AZN,SHEL,HSBA` | Real-time UK stock OHLCV (EODHD) | No |
-| `GET /uk/latest/{ticker}` | — | Real-time UK stock OHLCV for a single stock (EODHD) | No |
 | `GET /ftse100/` | `tickers=AZN,SHEL,HSBA` | Paginated FTSE 100 history | No |
 | `GET /ftse100/` | `sectors=Healthcare,Energy` | Paginated FTSE 100 history by sector | No |
 | `GET /ftse100/` | `industries=Oil Gas Consumable Fuels` | Paginated FTSE 100 history by industry | No |
@@ -4596,25 +4248,19 @@ The S&P 500 endpoints add two features the plain OHLCV endpoints don't provide:
 | `GET /ftse100/latest/` | `sectors=Healthcare,Energy` | Latest FTSE 100 OHLCV by sector | Yes |
 | `GET /ftse100/latest/` | `industries=Oil Gas Consumable Fuels` | Latest FTSE 100 OHLCV by industry | Yes |
 | `GET /ftse100/latest/` | *(omit tickers)* | Latest for all 100 FTSE 100 constituents | Yes |
-| `GET /ftse100/latest/{ticker}` | — | Latest for a single FTSE 100 constituent | Yes |
 | `GET /ust/bill/` | `tenors=4-Week,13-Week` | Paginated bill rate history | No |
 | `GET /ust/bill/latest/` | *(omit tenors)* | Latest for all 4 bill tenors | No |
-| `GET /ust/bill/latest/{tenor}` | — | Latest for a single bill tenor | No |
 | `GET /ust/long-term/` | `rate_types=LT Composite > 10 Years` | Paginated long-term rate history | No |
 | `GET /ust/long-term/latest/` | *(omit rate_types)* | Latest for all 2 rate types | No |
-| `GET /ust/long-term/latest/{rate_type}` | — | Latest for a single rate type | No |
 | `GET /ust/real-yield/` | `tenors=5-Year,10-Year` | Paginated real yield history | No |
 | `GET /ust/real-yield/latest/` | *(omit tenors)* | Latest for all 5 real yield tenors | No |
-| `GET /ust/real-yield/latest/{tenor}` | — | Latest for a single real yield tenor | No |
 | `GET /ust/yield/` | `tenors=2-Year,10-Year,30-Year` | Paginated yield curve history | No |
 | `GET /ust/yield/latest/` | *(omit tenors)* | Latest for all 14 yield tenors | No |
-| `GET /ust/yield/latest/{tenor}` | — | Latest for a single yield tenor | No |
 | `GET /commodity/` | `symbols=LGOc3,NICKEL,GDK` | Paginated commodity history | No |
 | `GET /commodity/` | `category=Energy` | Paginated commodity history by category | No |
 | `GET /commodity/latest/` | `symbols=LGOc3,NICKEL,GDK` | Latest commodity OHLCV | Yes |
 | `GET /commodity/latest/` | `category=Energy` | Latest commodity OHLCV by category | Yes |
 | `GET /commodity/latest/` | *(omit symbols)* | Latest for all commodities | Yes |
-| `GET /commodity/latest/{symbol}` | — | Latest for a single commodity | Yes |
 | `GET /commodity/symbols/` | `category=Energy` | List commodity symbols by category | Yes |
 | `GET /commodity/symbols/` | *(omit category)* | List all commodity symbols | Yes |
 | `GET /commodity/categories/` | — | List all distinct categories | No |
