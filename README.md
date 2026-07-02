@@ -1,6 +1,6 @@
 # OHLCV Data API
 
-High-performance REST API for OHLCV (Open, High, Low, Close, Volume) financial data with **batch queries**, **S&P 500 enriched endpoints**, **ETF & Index data**, **Government Bond data**, and **US Treasury Rate data**. Query latest prices or full history for multiple companies, ETFs, indices, government bonds, or US Treasury rates in a single request, with automatic ticker alias resolution and constituent verification.
+High-performance REST API for OHLCV (Open, High, Low, Close, Volume) financial data with **batch queries**, **S&P 500 enriched endpoints**, **ETF & Index data**, **Government Bond data**, **US Treasury Rate data**, **Crypto data**, **FTSE 100 data**, and **Commodity data**. Query latest prices or full history for multiple companies, ETFs, indices, government bonds, or US Treasury rates in a single request, with automatic ticker alias resolution and constituent verification.
 
 ## Highlights
 
@@ -9,6 +9,9 @@ High-performance REST API for OHLCV (Open, High, Low, Close, Volume) financial d
 - **ETF & Index data** — Dedicated endpoints for ETFs (SPY, QQQ, IWM…) and indices (GSPC, DJI, IXIC…) with enriched metadata (name, exchange, ISIN, currency)
 - **Government Bond data** — Dedicated endpoints for government bonds (US10Y, UK10Y, DE10Y…) with enriched metadata (name, exchange, type, currency, country) and country filtering
 - **US Treasury Rate data** — Dedicated endpoints for US Treasury bill rates, yield curve rates, real yield rates, and long-term rates with tenor/rate-type filtering and batch queries
+- **Crypto data** — Dedicated endpoints for cryptocurrency assets (BTC-USD, ETH-USD…) with enriched metadata, top-100 by volume, and real-time EODHD data
+- **FTSE 100 data** — Dedicated endpoints for FTSE 100 constituents with enriched metadata (name, sector, industry, isin, currency)
+- **Commodity data** — Dedicated endpoints for commodity OHLCV data (LGOc3, NICKEL, GDK…) with enriched metadata (name, category) and category filtering
 - **SQL query endpoint** — Execute read-only SQL queries directly against the database with built-in guardrails (read-only, timeout, row limit, allowed tables)
 - **Automatic alias resolution** — Mismatched tickers (e.g. `FISV` → `FI`) resolved transparently via the `ticker_aliases` table
 - **Constituent verification** — S&P 500 endpoints reject invalid tickers with clear error messages
@@ -46,126 +49,6 @@ uvicorn main:app --host 0.0.0.0 --port 8001
 ├── .env             # Environment variables
 └── DEVELOPER.md     # Full API reference
 ```
-
-## Batch Queries
-
-All "latest" and "history" endpoints support batch queries via the `tickers` query parameter. Instead of making N requests for N companies, make one:
-
-```bash
-# Latest close from DB for 3 companies — one request
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/latest_close/?tickers=AAPL,MSFT,GOOGL&api_key=YOUR_KEY"
-
-# Real-time OHLCV from EODHD for 3 companies — one request
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/latest/?tickers=AAPL,MSFT,GOOGL&api_key=YOUR_KEY"
-
-# Latest S&P 500 data for specific companies — enriched with name, sector, weight
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/latest/?tickers=AAPL,MSFT,GOOGL&api_key=YOUR_KEY"
-
-# Historical OHLCV for multiple S&P 500 companies with date range
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/sp500/history/?tickers=AAPL,MSFT,GOOGL&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
-
-# Historical OHLCV for multiple tickers (non-S&P 500)
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/?tickers=AAPL,MSFT,GOOGL&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
-
-# Latest close from DB for specific ETFs — enriched with name, exchange, ISIN, currency
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/etf/latest_close/?tickers=SPY,QQQ,IWM&api_key=YOUR_KEY"
-
-# Real-time ETF OHLCV from EODHD
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/etf/latest/?tickers=SPY,QQQ,IWM&api_key=YOUR_KEY"
-
-# Latest close from DB for specific indices
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/index/latest_close/?tickers=GSPC,DJI,IXIC&api_key=YOUR_KEY"
-
-# Real-time index OHLCV from EODHD
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/index/latest/?tickers=GSPC,DJI,IXIC&api_key=YOUR_KEY"
-
-# Historical OHLCV for ETFs with date range
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/etf/?tickers=SPY,QQQ&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
-
-# Latest close from DB for specific government bonds — enriched with name, exchange, type, currency, country
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest_close/?tickers=US10Y,UK10Y,DE10Y&api_key=YOUR_KEY"
-
-# Real-time government bond OHLCV from EODHD
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest/?tickers=US10Y,UK10Y,DE10Y&api_key=YOUR_KEY"
-
-# Latest close from DB for all government bonds from specific countries
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest_close/?countries=US,DE,JP&api_key=YOUR_KEY"
-
-# Historical OHLCV for government bonds with date range
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/?tickers=US10Y,UK10Y&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
-
-# Latest US Treasury bill rates for all tenors
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/bill/latest/?api_key=YOUR_KEY"
-
-# Latest US Treasury yield rates for specific tenors
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/latest/?tenors=2Y,5Y,10Y,30Y&api_key=YOUR_KEY"
-
-# Latest US Treasury real yield rate for a single tenor
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/real-yield/latest/10Y?api_key=YOUR_KEY"
-
-# Latest US Treasury long-term rates for all rate types
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/long-term/latest/?api_key=YOUR_KEY"
-
-# Historical US Treasury yield rates with date range and rate filter
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/?tenor=10Y&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
-```
-
-### Batch Endpoints Summary
-
-| Endpoint | Batch Parameter | Returns | Enriched |
-|----------|----------------|---------|----------|
-| `GET /ohlcv/latest_close/` | `tickers=AAPL,MSFT,GOOGL` | Latest close per ticker (DB) | No |
-| `GET /ohlcv/latest_close/` | *(omit tickers)* | Latest close for all ~12,500 tickers (DB) | No |
-| `GET /ohlcv/latest/` | `tickers=AAPL,MSFT,GOOGL` | Real-time OHLCV from EODHD | No |
-| `GET /ohlcv/` | `tickers=AAPL,MSFT,GOOGL` | Paginated history per ticker | No |
-| `GET /sp500/latest/` | `tickers=AAPL,MSFT,GOOGL` | Latest S&P 500 OHLCV | Yes |
-| `GET /sp500/latest/` | *(omit tickers)* | Latest for all 503 constituents | Yes |
-| `GET /sp500/history/` | `tickers=AAPL,MSFT,GOOGL` | Paginated S&P 500 history | Yes |
-| `GET /sp500/history/` | *(omit tickers)* | Paginated history for all active constituents | Yes |
-| `GET /etf/` | `tickers=SPY,QQQ,IWM` | Paginated ETF history | No |
-| `GET /etf/latest_close/` | `tickers=SPY,QQQ,IWM` | Latest ETF close (DB) | Yes |
-| `GET /etf/latest_close/` | *(omit tickers)* | Latest close for all ETFs (DB) | Yes |
-| `GET /etf/latest_close/{ticker}` | — | Latest close for a single ETF (DB) | Yes |
-| `GET /etf/latest/` | `tickers=SPY,QQQ,IWM` | Real-time ETF OHLCV from EODHD | No |
-| `GET /index/` | `tickers=GSPC,DJI,IXIC` | Paginated index history | No |
-| `GET /index/latest_close/` | `tickers=GSPC,DJI,IXIC` | Latest index close (DB) | Yes |
-| `GET /index/latest_close/` | *(omit tickers)* | Latest close for all indices (DB) | Yes |
-| `GET /index/latest_close/{ticker}` | — | Latest close for a single index (DB) | Yes |
-| `GET /index/latest/` | `tickers=GSPC,DJI,IXIC` | Real-time index OHLCV from EODHD | No |
-| `GET /gov-bond/` | `tickers=US10Y,UK10Y,DE10Y` | Paginated gov bond history | No |
-| `GET /gov-bond/` | `countries=US,DE,JP` | Paginated gov bond history by country | No |
-| `GET /gov-bond/latest_close/` | `tickers=US10Y,UK10Y,DE10Y` | Latest gov bond close (DB) | Yes |
-| `GET /gov-bond/latest_close/` | `countries=US,DE,JP` | Latest gov bond close by country (DB) | Yes |
-| `GET /gov-bond/latest_close/` | *(omit tickers)* | Latest close for all 117 gov bonds (DB) | Yes |
-| `GET /gov-bond/latest_close/{ticker}` | — | Latest close for a single gov bond (DB) | Yes |
-| `GET /gov-bond/latest/` | `tickers=US10Y,UK10Y,DE10Y` | Real-time gov bond OHLCV from EODHD | No |
-| `GET /fx/` | `tickers=EURUSD,GBPUSD,USDJPY` | Paginated FX history | No |
-| `GET /fx/latest_close/` | `tickers=EURUSD,GBPUSD,USDJPY` | Latest FX close (DB) | Yes |
-| `GET /fx/latest_close/` | *(omit tickers)* | Latest close for all FX pairs (DB) | Yes |
-| `GET /fx/latest_close/{ticker}` | — | Latest close for a single FX pair (DB) | Yes |
-| `GET /fx/latest/` | `tickers=EURUSD,GBPUSD,USDJPY` | Real-time FX OHLCV from EODHD | No |
-| `GET /uk/` | `tickers=AZN,SHEL,HSBA` | Paginated UK stock history | No |
-| `GET /uk/latest_close/` | `tickers=AZN,SHEL,HSBA` | Latest UK stock close (DB) | Yes |
-| `GET /uk/latest_close/` | *(omit tickers)* | Latest close for all UK stocks (DB) | Yes |
-| `GET /uk/latest_close/{ticker}` | — | Latest close for a single UK stock (DB) | Yes |
-| `GET /uk/latest/` | `tickers=AZN,SHEL,HSBA` | Real-time UK stock OHLCV from EODHD | No |
-| `GET /crypto/` | `tickers=BTC-USD,ETH-USD,SOL-USD` | Paginated crypto history | No |
-| `GET /crypto/latest_close/` | `tickers=BTC-USD,ETH-USD,SOL-USD` | Latest crypto close (DB) | Yes |
-| `GET /crypto/latest_close/` | *(omit tickers)* | Latest close for all crypto assets (DB) | Yes |
-| `GET /crypto/latest_close/{ticker}` | — | Latest close for a single crypto asset (DB) | Yes |
-| `GET /crypto/latest/` | `tickers=BTC-USD,ETH-USD,SOL-USD` | Real-time crypto OHLCV from EODHD | No |
-| `GET /ust/bill/` | `tenor=13WK` or `tenors=4WK,13WK,26WK` | Paginated bill rate history | No |
-| `GET /ust/bill/latest/` | `tenors=4WK,13WK,26WK` | Latest bill rates per tenor | No |
-| `GET /ust/bill/latest/` | *(omit tenors)* | Latest for all 7 bill tenors | No |
-| `GET /ust/long-term/` | `rate_type=BC_20year` or `rate_types=BC_20year,Over_10_Years` | Paginated long-term rate history | No |
-| `GET /ust/long-term/latest/` | `rate_types=BC_20year,Over_10_Years` | Latest long-term rates per type | No |
-| `GET /ust/long-term/latest/` | *(omit rate_types)* | Latest for all 3 long-term rate types | No |
-| `GET /ust/real-yield/` | `tenor=10Y` or `tenors=5Y,10Y,30Y` | Paginated real yield history | No |
-| `GET /ust/real-yield/latest/` | `tenors=5Y,10Y,30Y` | Latest real yield rates per tenor | No |
-| `GET /ust/real-yield/latest/` | *(omit tenors)* | Latest for all 5 real yield tenors | No |
-| `GET /ust/yield/` | `tenor=10Y` or `tenors=2Y,5Y,10Y,30Y` | Paginated yield rate history | No |
-| `GET /ust/yield/latest/` | `tenors=2Y,5Y,10Y,30Y` | Latest yield rates per tenor | No |
-| `GET /ust/yield/latest/` | *(omit tenors)* | Latest for all 14 yield tenors | No |
 
 ## S&P 500 Endpoints
 
@@ -353,23 +236,6 @@ See [DEVELOPER.md](./DEVELOPER.md) for full documentation including CTE examples
 
 Dedicated endpoints for government bonds (US10Y, UK10Y, DE10Y…) with enriched metadata (name, exchange, type, currency, country). Supports country filtering via `country` (single) and `countries` (comma-separated) parameters.
 
-```bash
-# Latest close from DB for specific government bonds — enriched with name, exchange, type, currency, country
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest_close/?tickers=US10Y,UK10Y,DE10Y&api_key=YOUR_KEY"
-
-# Real-time government bond OHLCV from EODHD
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest/?tickers=US10Y,UK10Y,DE10Y&api_key=YOUR_KEY"
-
-# Latest close from DB for all government bonds from specific countries
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/latest_close/?countries=US,DE,JP&api_key=YOUR_KEY"
-
-# Historical OHLCV for government bonds with date range
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/?tickers=US10Y,UK10Y&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
-
-# Historical OHLCV for all bonds from a specific country
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/?countries=US&start_date=2025-01-01&api_key=YOUR_KEY"
-```
-
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/gov-bond/` | List gov bond OHLCV data with filters (supports batch `tickers`, `country`/`countries`) |
@@ -380,14 +246,6 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/gov-bond/?countries=US
 ### Foreign Exchange (FX) Data
 
 Dedicated endpoints for foreign exchange pairs (EURUSD, GBPUSD, USDJPY…) with enriched metadata (name, exchange, type, currency, base_currency, quote_currency).
-
-```bash
-# Latest close from DB for specific FX pairs
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/fx/latest_close/?tickers=EURUSD,GBPUSD,USDJPY&api_key=YOUR_KEY"
-
-# Real-time FX OHLCV from EODHD
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/fx/latest/?tickers=EURUSD,GBPUSD,USDJPY&api_key=YOUR_KEY"
-```
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -402,14 +260,6 @@ Dedicated endpoints for UK stocks listed on the London Stock Exchange (LSE) with
 
 > **Note:** UK tickers are **case-sensitive** (e.g., `AZN`, not `azn`).
 
-```bash
-# Latest close from DB for specific UK stocks
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/uk/latest_close/?tickers=AZN,SHEL,HSBA&api_key=YOUR_KEY"
-
-# Real-time UK stock OHLCV from EODHD
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/uk/latest/?tickers=AZN,SHEL,HSBA&api_key=YOUR_KEY"
-```
-
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/uk/` | List UK stock OHLCV data with filters (supports batch `tickers`, `sector`, `industry`) |
@@ -423,43 +273,32 @@ Dedicated endpoints for cryptocurrency assets (BTC-USD, ETH-USD, SOL-USD…) wit
 
 > **Note:** Crypto tickers are **case-sensitive** (e.g., `BTC-USD`, not `btc-usd`).
 
-```bash
-# Latest close from DB for specific crypto assets
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/crypto/latest_close/?tickers=BTC-USD,ETH-USD,SOL-USD&api_key=YOUR_KEY"
-
-# Real-time crypto OHLCV from EODHD
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/crypto/latest/?tickers=BTC-USD,ETH-USD,SOL-USD&api_key=YOUR_KEY"
-```
-
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/crypto/` | List crypto OHLCV data with filters (supports batch `tickers`, `base_currency`, `quote_currency`) |
 | GET | `/crypto/latest_close/` | Batch get latest crypto close from DB (specific tickers or all) |
 | GET | `/crypto/latest_close/{ticker}` | Get latest crypto close from DB for a single asset |
 | GET | `/crypto/latest/` | Batch get real-time crypto OHLCV from EODHD (requires `tickers`) |
+| GET | `/crypto/history/` | Paginated crypto history with metadata (supports batch `tickers`) |
+| GET | `/crypto/top100/` | Top 100 crypto by volume with notional_value |
+| GET | `/crypto/assets/` | List all crypto asset metadata (no OHLCV) |
+
+### FTSE 100 Data
+
+Dedicated endpoints for FTSE 100 constituents with enriched metadata (name, sector, industry from `ftse100_constituents`; isin, currency from `uk_assets`). Supports filtering by `sector` and `industry` parameters.
+
+> **Note:** FTSE 100 tickers are **case-sensitive** (e.g., `AZN`, not `azn`).
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/ftse100/` | List FTSE 100 OHLCV data with filters (supports batch `tickers`, `sector`, `industry`) |
+| GET | `/ftse100/latest/` | Batch get latest FTSE 100 OHLCV (specific tickers, sector, industry, or all) |
 
 ### US Treasury Rate Data
 
 Dedicated endpoints for US Treasury rates across four categories: bill rates, yield curve rates, real yield rates, and long-term rates. Each category supports tenor or rate-type filtering and batch queries.
 
 > **Note:** Long-term rate types (`BC_20year`, `Over_10_Years`, `Real_Rate`) are **case-sensitive**. All other UST tenors are case-insensitive (automatically uppercased).
-
-```bash
-# Latest US Treasury bill rates for all tenors
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/bill/latest/?api_key=YOUR_KEY"
-
-# Latest US Treasury yield rates for specific tenors
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/latest/?tenors=2Y,5Y,10Y,30Y&api_key=YOUR_KEY"
-
-# Latest US Treasury real yield rate for a single tenor
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/real-yield/latest/10Y?api_key=YOUR_KEY"
-
-# Latest US Treasury long-term rates for all rate types (case-sensitive!)
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/long-term/latest/?api_key=YOUR_KEY"
-
-# Historical US Treasury yield rates with date range
-curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/?tenor=10Y&start_date=2025-01-01&end_date=2025-12-31&api_key=YOUR_KEY"
-```
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -481,7 +320,16 @@ curl "https://ohlcv-api-832081557693.europe-west2.run.app/ust/yield/?tenor=10Y&s
 | Real-Yield | `tenor` | `5Y`, `7Y`, `10Y`, `20Y`, `30Y` |
 | Yield | `tenor` | `1M`, `1.5M`, `2M`, `3M`, `4M`, `6M`, `1Y`, `2Y`, `3Y`, `5Y`, `7Y`, `10Y`, `20Y`, `30Y` |
 
-### Ticker Aliases
+### Commodity Data
+
+Dedicated endpoints for commodity OHLCV data (LGOc3, NICKEL, GDK…) with enriched metadata (name, category). Supports filtering by `category`.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/commodity/` | List commodity OHLCV data with filters (supports batch `symbols`, `category`) |
+| GET | `/commodity/latest/` | Batch get latest commodity OHLCV (specific symbols, category, or all) |
+| GET | `/commodity/symbols/` | List commodity symbols (filterable by `category`) |
+| GET | `/commodity/categories/` | List all distinct commodity categories |
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
