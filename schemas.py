@@ -18,6 +18,7 @@ class OhlcvDataBase(BaseModel):
     adjusted_close: Optional[Decimal] = None
     volume: Optional[int] = None
     asset_isin: Optional[str] = None
+    instrument_id: Optional[UUID] = None
 
 
 class OhlcvDataCreate(OhlcvDataBase):
@@ -549,6 +550,31 @@ class FxLatestResponse(BaseModel):
     count: int
 
 
+class FxAssetItem(BaseModel):
+    """Single FX asset metadata."""
+    code: str
+    name: Optional[str] = None
+    exchange: Optional[str] = None
+    base_currency: Optional[str] = None
+    quote_currency: Optional[str] = None
+    type: Optional[str] = None
+    currency: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class FxAssetResponse(BaseModel):
+    """Paginated list of FX asset metadata."""
+    data: List[FxAssetItem]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
 # ── UK Stock (LSE) Schemas ──────────────────────────────────────────────
 
 class UkOhlcvResponse(BaseModel):
@@ -605,6 +631,32 @@ class UkLatestResponse(BaseModel):
     count: int
 
 
+class UkAssetItem(BaseModel):
+    """Single UK stock asset metadata."""
+    code: str
+    name: Optional[str] = None
+    exchange: Optional[str] = None
+    type: Optional[str] = None
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    isin: Optional[str] = None
+    currency: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UkAssetResponse(BaseModel):
+    """Paginated list of UK stock asset metadata."""
+    data: List[UkAssetItem]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
 # ── FTSE 100 Schemas ──────────────────────────────────────────────────────
 
 class Ftse100LatestItem(BaseModel):
@@ -650,6 +702,65 @@ class Ftse100HistoryItem(BaseModel):
 class Ftse100PaginatedResponse(BaseModel):
     """Paginated historical OHLCV for FTSE 100 constituents."""
     data: List[Ftse100HistoryItem]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class Ftse100ConstituentItem(BaseModel):
+    """Single FTSE 100 constituent metadata."""
+    code: str
+    name: Optional[str] = None
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    isin: Optional[str] = None
+    currency: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class Ftse100ConstituentResponse(BaseModel):
+    """Paginated list of FTSE 100 constituent metadata."""
+    data: List[Ftse100ConstituentItem]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class GovBondAssetItem(BaseModel):
+    """Single government bond asset metadata."""
+    code: str
+    name: Optional[str] = None
+    exchange: Optional[str] = None
+    type: Optional[str] = None
+    currency: Optional[str] = None
+    country: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class GovBondAssetResponse(BaseModel):
+    """Paginated list of government bond asset metadata."""
+    data: List[GovBondAssetItem]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+
+class EtfIndexAssetListResponse(BaseModel):
+    """Paginated list of ETF or index asset metadata."""
+    data: List[EtfIndexAssetResponse]
     total: int
     page: int
     per_page: int
@@ -881,4 +992,30 @@ class RealTimeOhlcvItem(BaseModel):
 class RealTimeOhlcvResponse(BaseModel):
     """Batch real-time OHLCV response from EODHD."""
     data: List[RealTimeOhlcvItem]
+    count: int
+
+
+class AssetLookupItem(BaseModel):
+    """Unified asset metadata from a single ticker lookup."""
+    code: str
+    name: Optional[str] = None
+    exchange: Optional[str] = None
+    asset_type: Optional[str] = None
+    isin: Optional[str] = None
+    currency: Optional[str] = None
+    description: Optional[str] = None
+    sector: Optional[str] = None
+    industry: Optional[str] = None
+    country: Optional[str] = None
+    base_currency: Optional[str] = None
+    quote_currency: Optional[str] = None
+    gic_sector: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AssetLookupResponse(BaseModel):
+    """Response for asset lookup by ticker."""
+    data: List[AssetLookupItem]
     count: int

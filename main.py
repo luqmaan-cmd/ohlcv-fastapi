@@ -29,6 +29,7 @@ from models import (
     UstBillRate, UstLongTermRate, UstRealYieldRate, UstYieldRate,
     CryptoOhlcvData, CryptoAsset,
     CommodityEOD,
+    OhlcvUnified,
 )
 from schemas import (
     OhlcvDataCreate, OhlcvDataUpdate, OhlcvDataResponse,
@@ -45,10 +46,15 @@ from schemas import (
     GovBondLatestItem, GovBondLatestResponse,
     FxOhlcvResponse, FxPaginatedResponse,
     FxLatestItem, FxLatestResponse,
+    FxAssetItem, FxAssetResponse,
     UkOhlcvResponse, UkPaginatedResponse,
     UkLatestItem, UkLatestResponse,
+    UkAssetItem, UkAssetResponse,
     Ftse100LatestItem, Ftse100LatestResponse,
     Ftse100HistoryItem, Ftse100PaginatedResponse,
+    Ftse100ConstituentItem, Ftse100ConstituentResponse,
+    GovBondAssetItem, GovBondAssetResponse,
+    EtfIndexAssetListResponse,
     UstBillRateResponse, UstBillPaginatedResponse,
     UstBillLatestItem, UstBillLatestResponse,
     UstLongTermRateResponse, UstLongTermPaginatedResponse,
@@ -67,6 +73,7 @@ from schemas import (
     CommoditySymbolItem, CommoditySymbolResponse,
     CommodityCategoryResponse,
     RealTimeOhlcvItem, RealTimeOhlcvResponse,
+    AssetLookupItem, AssetLookupResponse,
 )
 
 API_KEY = os.getenv("API_KEY", "ohlcv-api-key-2024-secure")
@@ -342,63 +349,63 @@ async def get_ohlcv_data(
     ticker_list = parse_comma_separated(tickers) or ([ticker.upper()] if ticker else None)
     isin_list = parse_comma_separated(asset_isins) or ([asset_isin.upper()] if asset_isin else None)
     
-    query = select(OhlcvData)
-    count_query = select(func.count(OhlcvData.id))
+    query = select(OhlcvUnified).where(OhlcvUnified.exchange == "US")
+    count_query = select(func.count(OhlcvUnified.id)).where(OhlcvUnified.exchange == "US")
     
     if ticker_list:
         if len(ticker_list) == 1:
-            query = query.where(OhlcvData.ticker == ticker_list[0])
-            count_query = count_query.where(OhlcvData.ticker == ticker_list[0])
+            query = query.where(OhlcvUnified.ticker == ticker_list[0])
+            count_query = count_query.where(OhlcvUnified.ticker == ticker_list[0])
         else:
-            query = query.where(OhlcvData.ticker.in_(ticker_list))
-            count_query = count_query.where(OhlcvData.ticker.in_(ticker_list))
+            query = query.where(OhlcvUnified.ticker.in_(ticker_list))
+            count_query = count_query.where(OhlcvUnified.ticker.in_(ticker_list))
     
     if isin_list:
         if len(isin_list) == 1:
-            query = query.where(OhlcvData.asset_isin == isin_list[0])
-            count_query = count_query.where(OhlcvData.asset_isin == isin_list[0])
+            query = query.where(OhlcvUnified.instrument_id == isin_list[0])
+            count_query = count_query.where(OhlcvUnified.instrument_id == isin_list[0])
         else:
-            query = query.where(OhlcvData.asset_isin.in_(isin_list))
-            count_query = count_query.where(OhlcvData.asset_isin.in_(isin_list))
+            query = query.where(OhlcvUnified.instrument_id.in_(isin_list))
+            count_query = count_query.where(OhlcvUnified.instrument_id.in_(isin_list))
     
     if year:
-        query = query.where(func.extract("year", OhlcvData.date) == year)
-        count_query = count_query.where(func.extract("year", OhlcvData.date) == year)
+        query = query.where(func.extract("year", OhlcvUnified.date) == year)
+        count_query = count_query.where(func.extract("year", OhlcvUnified.date) == year)
     
     if month:
-        query = query.where(func.extract("month", OhlcvData.date) == month)
-        count_query = count_query.where(func.extract("month", OhlcvData.date) == month)
+        query = query.where(func.extract("month", OhlcvUnified.date) == month)
+        count_query = count_query.where(func.extract("month", OhlcvUnified.date) == month)
     
     if start_date:
-        query = query.where(OhlcvData.date >= start_date)
-        count_query = count_query.where(OhlcvData.date >= start_date)
+        query = query.where(OhlcvUnified.date >= start_date)
+        count_query = count_query.where(OhlcvUnified.date >= start_date)
     
     if end_date:
-        query = query.where(OhlcvData.date <= end_date)
-        count_query = count_query.where(OhlcvData.date <= end_date)
+        query = query.where(OhlcvUnified.date <= end_date)
+        count_query = count_query.where(OhlcvUnified.date <= end_date)
     
     if open_min is not None:
-        query = query.where(OhlcvData.open >= open_min)
-        count_query = count_query.where(OhlcvData.open >= open_min)
+        query = query.where(OhlcvUnified.open >= open_min)
+        count_query = count_query.where(OhlcvUnified.open >= open_min)
     if open_max is not None:
-        query = query.where(OhlcvData.open <= open_max)
-        count_query = count_query.where(OhlcvData.open <= open_max)
+        query = query.where(OhlcvUnified.open <= open_max)
+        count_query = count_query.where(OhlcvUnified.open <= open_max)
     
     if close_min is not None:
-        query = query.where(OhlcvData.close >= close_min)
-        count_query = count_query.where(OhlcvData.close >= close_min)
+        query = query.where(OhlcvUnified.close >= close_min)
+        count_query = count_query.where(OhlcvUnified.close >= close_min)
     if close_max is not None:
-        query = query.where(OhlcvData.close <= close_max)
-        count_query = count_query.where(OhlcvData.close <= close_max)
+        query = query.where(OhlcvUnified.close <= close_max)
+        count_query = count_query.where(OhlcvUnified.close <= close_max)
     
     if volume_min is not None:
-        query = query.where(OhlcvData.volume >= volume_min)
-        count_query = count_query.where(OhlcvData.volume >= volume_min)
+        query = query.where(OhlcvUnified.volume >= volume_min)
+        count_query = count_query.where(OhlcvUnified.volume >= volume_min)
     if volume_max is not None:
-        query = query.where(OhlcvData.volume <= volume_max)
-        count_query = count_query.where(OhlcvData.volume <= volume_max)
+        query = query.where(OhlcvUnified.volume <= volume_max)
+        count_query = count_query.where(OhlcvUnified.volume <= volume_max)
     
-    sort_column = getattr(OhlcvData, sort_by or "date")
+    sort_column = getattr(OhlcvUnified, sort_by or "date")
     query = query.order_by(sort_column.desc() if sort_order == "desc" else sort_column.asc())
     
     offset = (page - 1) * per_page
@@ -435,45 +442,36 @@ async def get_batch_latest_close_ohlcv(
 ):
     ticker_list = parse_comma_separated(tickers)
 
-    # LATERAL join approach: ~50-100ms vs 30s+ with GROUP BY/MAX subquery.
-    # Each LATERAL does a single Index Scan Backward on
-    # ohlcv_data_ticker_date_key to fetch the latest row per ticker.
     if ticker_list:
-        # Specific tickers: use a VALUES list as the driving row source
         ticker_values = ", ".join(f"('{t}')" for t in ticker_list)
         query = text(f"""
             SELECT t.ticker, o.id, o.date, o.open, o.high, o.low, o.close,
-                   o.adjusted_close, o.volume, o.asset_isin,
+                   o.adjusted_close, o.volume, o.instrument_id,
                    o.created_at, o.updated_at
             FROM (VALUES {ticker_values}) AS t(ticker)
             CROSS JOIN LATERAL (
                 SELECT id, date, open, high, low, close, adjusted_close,
-                       volume, asset_isin, created_at, updated_at
-                FROM ohlcv_data
-                WHERE ticker = t.ticker
+                       volume, instrument_id, created_at, updated_at
+                FROM ohlcv_unified
+                WHERE ticker = t.ticker AND exchange = 'US'
+                      AND date >= CURRENT_DATE - INTERVAL '7 days'
                 ORDER BY date DESC
                 LIMIT 1
             ) o
             ORDER BY t.ticker ASC
         """)
     else:
-        # All tickers: LATERAL join driven by the tickers lookup table.
-        # ~313ms for 12.5K tickers vs ~10.4s with SELECT DISTINCT subquery
-        # (which scans 43M index entries) vs 51-56s with DISTINCT ON.
-        # The tickers table (kept in sync via trigger) provides an
-        # Index Only Scan (5ms) as the driving row source, and each
-        # LATERAL does a single Index Scan Backward on
-        # ohlcv_data_ticker_date_key to fetch the latest row per ticker.
         query = text("""
             SELECT d.ticker, o.id, o.date, o.open, o.high, o.low, o.close,
-                   o.adjusted_close, o.volume, o.asset_isin,
+                   o.adjusted_close, o.volume, o.instrument_id,
                    o.created_at, o.updated_at
             FROM tickers d
             CROSS JOIN LATERAL (
                 SELECT id, date, open, high, low, close, adjusted_close,
-                       volume, asset_isin, created_at, updated_at
-                FROM ohlcv_data
-                WHERE ticker = d.ticker
+                       volume, instrument_id, created_at, updated_at
+                FROM ohlcv_unified
+                WHERE ticker = d.ticker AND exchange = 'US'
+                      AND date >= CURRENT_DATE - INTERVAL '7 days'
                 ORDER BY date DESC
                 LIMIT 1
             ) o
@@ -494,7 +492,7 @@ async def get_batch_latest_close_ohlcv(
             close=row.close,
             adjusted_close=row.adjusted_close,
             volume=row.volume,
-            asset_isin=row.asset_isin,
+            instrument_id=row.instrument_id,
             created_at=row.created_at,
             updated_at=row.updated_at
         )
@@ -509,9 +507,13 @@ async def get_batch_latest_close_ohlcv(
 
 @app.get("/ohlcv/latest_close/{ticker}", response_model=OhlcvDataResponse)
 async def get_latest_close_ohlcv(ticker: str, db: AsyncSession = Depends(get_db), api_key: str = Depends(verify_api_key)):
-    query = select(OhlcvData).where(
-        OhlcvData.ticker == ticker.upper()
-    ).order_by(OhlcvData.date.desc()).limit(1)
+    query = select(OhlcvUnified).where(
+        and_(
+            OhlcvUnified.ticker == ticker.upper(),
+            OhlcvUnified.exchange == "US",
+            OhlcvUnified.date >= date.today() - timedelta(days=7)
+        )
+    ).order_by(OhlcvUnified.date.desc()).limit(1)
     
     result = await db.execute(query)
     ohlcv = result.scalar_one_or_none()
@@ -546,14 +548,14 @@ async def get_ohlcv_stats(ticker: str, db: AsyncSession = Depends(get_db), api_k
     ticker = ticker.upper()
     
     stats_query = select(
-        func.count(OhlcvData.id).label("count"),
-        func.min(OhlcvData.date).label("earliest_date"),
-        func.max(OhlcvData.date).label("latest_date"),
-        func.avg(OhlcvData.volume).label("avg_volume"),
-        func.min(OhlcvData.close).label("min_close"),
-        func.max(OhlcvData.close).label("max_close"),
-        func.avg(OhlcvData.close).label("avg_close")
-    ).where(OhlcvData.ticker == ticker)
+        func.count(OhlcvUnified.id).label("count"),
+        func.min(OhlcvUnified.date).label("earliest_date"),
+        func.max(OhlcvUnified.date).label("latest_date"),
+        func.avg(OhlcvUnified.volume).label("avg_volume"),
+        func.min(OhlcvUnified.close).label("min_close"),
+        func.max(OhlcvUnified.close).label("max_close"),
+        func.avg(OhlcvUnified.close).label("avg_close")
+    ).where(and_(OhlcvUnified.ticker == ticker, OhlcvUnified.exchange == "US"))
     
     result = await db.execute(stats_query)
     stats = result.one()
@@ -565,12 +567,13 @@ async def get_ohlcv_stats(ticker: str, db: AsyncSession = Depends(get_db), api_k
     
     fifty_two_weeks_ago = date.today() - timedelta(weeks=52)
     fifty_two_week_query = select(
-        func.max(OhlcvData.close).label("high"),
-        func.min(OhlcvData.close).label("low")
+        func.max(OhlcvUnified.close).label("high"),
+        func.min(OhlcvUnified.close).label("low")
     ).where(
         and_(
-            OhlcvData.ticker == ticker,
-            OhlcvData.date >= fifty_two_weeks_ago
+            OhlcvUnified.ticker == ticker,
+            OhlcvUnified.exchange == "US",
+            OhlcvUnified.date >= fifty_two_weeks_ago
         )
     )
     
@@ -600,9 +603,138 @@ async def get_all_tickers(db: AsyncSession = Depends(get_db), api_key: str = Dep
     return [row[0] for row in result.all()]
 
 
+@app.get("/assets/{ticker}", response_model=AssetLookupResponse)
+async def lookup_asset(
+    ticker: str,
+    exchange: Optional[str] = Query(None, description="Filter by exchange (e.g., US, LSE, CC)"),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    Look up asset metadata by ticker across all asset tables.
+    Returns matching assets from US stocks, UK stocks, ETFs, indices,
+    government bonds, FX, crypto, and FTSE 100 constituents.
+    Use `exchange` to disambiguate tickers that exist on multiple exchanges.
+    """
+    ticker = ticker.upper()
+    items: list[AssetLookupItem] = []
+
+    # US stocks (assets table — keyed by code)
+    q = select(Asset).where(Asset.code == ticker)
+    if exchange:
+        q = q.where(Asset.country_name == exchange)
+    result = await db.execute(q)
+    for row in result.scalars().all():
+        items.append(AssetLookupItem(
+            code=row.code,                          # type: ignore[arg-type]
+            name=row.name,                           # type: ignore[arg-type]
+            exchange="US",                           # type: ignore[arg-type]
+            asset_type="stock",
+            isin=row.isin,                           # type: ignore[arg-type]
+            description=row.description,             # type: ignore[arg-type]
+            gic_sector=row.gic_sector,               # type: ignore[arg-type]
+            country=row.country_name,                # type: ignore[arg-type]
+        ))
+
+    # UK stocks
+    q = select(UkAsset).where(UkAsset.code == ticker)
+    result = await db.execute(q)
+    for row in result.scalars().all():
+        items.append(AssetLookupItem(
+            code=row.code,                           # type: ignore[arg-type]
+            name=row.name,                            # type: ignore[arg-type]
+            exchange=row.exchange,                    # type: ignore[arg-type]
+            asset_type="stock",
+            sector=row.sector,                        # type: ignore[arg-type]
+            industry=row.industry,                    # type: ignore[arg-type]
+            isin=row.isin,                            # type: ignore[arg-type]
+            currency=row.currency,                    # type: ignore[arg-type]
+        ))
+
+    # ETFs and Indices
+    q = select(EtfIndexAsset).where(EtfIndexAsset.code == ticker)
+    result = await db.execute(q)
+    for row in result.scalars().all():
+        items.append(AssetLookupItem(
+            code=row.code,                           # type: ignore[arg-type]
+            name=row.name,                           # type: ignore[arg-type]
+            exchange=row.exchange,                   # type: ignore[arg-type]
+            asset_type=row.type,                     # type: ignore[arg-type]
+            isin=row.isin,                           # type: ignore[arg-type]
+            currency=row.currency,                   # type: ignore[arg-type]
+        ))
+
+    # Government bonds
+    q = select(GovBondAsset).where(GovBondAsset.code == ticker)
+    result = await db.execute(q)
+    for row in result.scalars().all():
+        items.append(AssetLookupItem(
+            code=row.code,                           # type: ignore[arg-type]
+            name=row.name,                           # type: ignore[arg-type]
+            exchange=row.exchange,                   # type: ignore[arg-type]
+            asset_type=row.type,                     # type: ignore[arg-type]
+            currency=row.currency,                   # type: ignore[arg-type]
+            country=row.country,                     # type: ignore[arg-type]
+        ))
+
+    # FX
+    q = select(FxAsset).where(FxAsset.code == ticker)
+    result = await db.execute(q)
+    for row in result.scalars().all():
+        items.append(AssetLookupItem(
+            code=row.code,                           # type: ignore[arg-type]
+            name=row.name,                           # type: ignore[arg-type]
+            exchange=row.exchange,                   # type: ignore[arg-type]
+            asset_type="fx",
+            base_currency=row.base_currency,         # type: ignore[arg-type]
+            quote_currency=row.quote_currency,       # type: ignore[arg-type]
+            currency=row.currency,                   # type: ignore[arg-type]
+        ))
+
+    # Crypto
+    q = select(CryptoAsset).where(CryptoAsset.code == ticker)
+    result = await db.execute(q)
+    for row in result.scalars().all():
+        items.append(AssetLookupItem(
+            code=row.code,                           # type: ignore[arg-type]
+            name=row.name,                           # type: ignore[arg-type]
+            exchange=row.exchange,                   # type: ignore[arg-type]
+            asset_type="crypto",
+            base_currency=row.base_currency,         # type: ignore[arg-type]
+            quote_currency=row.quote_currency,       # type: ignore[arg-type]
+            currency=row.currency,                   # type: ignore[arg-type]
+        ))
+
+    # FTSE 100 constituents
+    q = select(Ftse100Constituent).where(Ftse100Constituent.code == ticker)
+    result = await db.execute(q)
+    for row in result.scalars().all():
+        items.append(AssetLookupItem(
+            code=row.code,                           # type: ignore[arg-type]
+            name=row.name,                           # type: ignore[arg-type]
+            exchange="LSE",                           # type: ignore[arg-type]
+            asset_type="stock",
+            sector=row.sector,                        # type: ignore[arg-type]
+            industry=row.industry,                    # type: ignore[arg-type]
+            isin=row.isin,                            # type: ignore[arg-type]
+            currency=row.currency,                   # type: ignore[arg-type]
+        ))
+
+    if not items:
+        raise HTTPException(status_code=404, detail=f"No asset found with ticker: {ticker}")
+
+    if exchange:
+        items = [i for i in items if i.exchange and i.exchange.upper() == exchange.upper()]
+
+    if not items:
+        raise HTTPException(status_code=404, detail=f"No asset found with ticker: {ticker} on exchange: {exchange}")
+
+    return AssetLookupResponse(data=items, count=len(items))
+
+
 @app.get("/ohlcv/{ohlcv_id}", response_model=OhlcvDataResponse)
 async def get_ohlcv_by_id(ohlcv_id: str, db: AsyncSession = Depends(get_db), api_key: str = Depends(verify_api_key)):
-    query = select(OhlcvData).where(OhlcvData.id == ohlcv_id)
+    query = select(OhlcvUnified).where(OhlcvUnified.id == ohlcv_id)
     result = await db.execute(query)
     ohlcv = result.scalar_one_or_none()
     if not ohlcv:
@@ -2268,6 +2400,82 @@ async def get_fx_realtime_latest_batch(
 
 
 
+@app.get("/fx/assets/", response_model=FxAssetResponse)
+async def get_fx_assets(
+    base_currency: Optional[str] = Query(None, description="Filter by base currency (e.g., EUR, GBP)"),
+    quote_currency: Optional[str] = Query(None, description="Filter by quote currency (e.g., USD, JPY)"),
+    type: Optional[str] = Query(None, description="Filter by type"),
+    search: Optional[str] = Query(None, description="Search code or name (case-insensitive partial match)"),
+    sort: Optional[str] = Query("code", description="Sort field: code, name"),
+    order: Optional[str] = Query("asc", description="Sort order: asc or desc"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(5000, ge=1, le=10000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    conditions = []
+
+    if base_currency:
+        conditions.append(FxAsset.base_currency == base_currency.upper())
+    if quote_currency:
+        conditions.append(FxAsset.quote_currency == quote_currency.upper())
+    if type:
+        conditions.append(FxAsset.type == type)
+    if search:
+        pattern = f"%{search}%"
+        conditions.append(
+            (FxAsset.code.ilike(pattern)) | (FxAsset.name.ilike(pattern))
+        )
+
+    count_query = select(func.count(FxAsset.code))
+    for c in conditions:
+        count_query = count_query.where(c)
+    cache_key = f"fx_assets|base={base_currency}|quote={quote_currency}|type={type}|search={search}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
+
+    allowed_sorts = {"code", "name"}
+    sort_field = sort if sort in allowed_sorts else "code"
+    sort_col = getattr(FxAsset, sort_field)
+    offset = (page - 1) * per_page
+
+    data_query = select(FxAsset)
+    for c in conditions:
+        data_query = data_query.where(c)
+    data_query = data_query.order_by(
+        sort_col.asc() if order == "asc" else sort_col.desc()
+    ).offset(offset).limit(per_page)
+
+    result = await db.execute(data_query)
+    rows = result.scalars().all()
+
+    items = [
+        FxAssetItem(
+            code=row.code,                          # type: ignore[arg-type]
+            name=row.name,                          # type: ignore[arg-type]
+            exchange=row.exchange,                  # type: ignore[arg-type]
+            base_currency=row.base_currency,        # type: ignore[arg-type]
+            quote_currency=row.quote_currency,       # type: ignore[arg-type]
+            type=row.type,                          # type: ignore[arg-type]
+            currency=row.currency,                  # type: ignore[arg-type]
+        )
+        for row in rows
+    ]
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+    return FxAssetResponse(
+        data=items,
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
 
 # ── Crypto Endpoints ─────────────────────────────────────────────────────────
 
@@ -2784,7 +2992,7 @@ async def get_crypto_assets(
     sort: Optional[str] = Query("code", description="Sort field: code, name"),
     order: Optional[str] = Query("asc", description="Sort order: asc or desc"),
     page: int = Query(1, ge=1),
-    per_page: int = Query(50, ge=1, le=500),
+    per_page: int = Query(5000, ge=1, le=10000),
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key),
 ):
@@ -3156,6 +3364,84 @@ async def get_uk_realtime_latest_batch(
 
 
 
+@app.get("/uk/assets/", response_model=UkAssetResponse)
+async def get_uk_assets(
+    sector: Optional[str] = Query(None, description="Filter by sector (e.g., Healthcare, Energy)"),
+    industry: Optional[str] = Query(None, description="Filter by industry"),
+    type: Optional[str] = Query(None, description="Filter by type"),
+    search: Optional[str] = Query(None, description="Search code or name (case-insensitive partial match)"),
+    sort: Optional[str] = Query("code", description="Sort field: code, name"),
+    order: Optional[str] = Query("asc", description="Sort order: asc or desc"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(5000, ge=1, le=10000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    conditions = []
+
+    if sector:
+        conditions.append(UkAsset.sector == sector)
+    if industry:
+        conditions.append(UkAsset.industry == industry)
+    if type:
+        conditions.append(UkAsset.type == type)
+    if search:
+        pattern = f"%{search}%"
+        conditions.append(
+            (UkAsset.code.ilike(pattern)) | (UkAsset.name.ilike(pattern))
+        )
+
+    count_query = select(func.count(UkAsset.code))
+    for c in conditions:
+        count_query = count_query.where(c)
+    cache_key = f"uk_assets|sector={sector}|industry={industry}|type={type}|search={search}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
+
+    allowed_sorts = {"code", "name"}
+    sort_field = sort if sort in allowed_sorts else "code"
+    sort_col = getattr(UkAsset, sort_field)
+    offset = (page - 1) * per_page
+
+    data_query = select(UkAsset)
+    for c in conditions:
+        data_query = data_query.where(c)
+    data_query = data_query.order_by(
+        sort_col.asc() if order == "asc" else sort_col.desc()
+    ).offset(offset).limit(per_page)
+
+    result = await db.execute(data_query)
+    rows = result.scalars().all()
+
+    items = [
+        UkAssetItem(
+            code=row.code,                          # type: ignore[arg-type]
+            name=row.name,                          # type: ignore[arg-type]
+            exchange=row.exchange,                  # type: ignore[arg-type]
+            type=row.type,                          # type: ignore[arg-type]
+            sector=row.sector,                      # type: ignore[arg-type]
+            industry=row.industry,                  # type: ignore[arg-type]
+            isin=row.isin,                          # type: ignore[arg-type]
+            currency=row.currency,                  # type: ignore[arg-type]
+        )
+        for row in rows
+    ]
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+    return UkAssetResponse(
+        data=items,
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+
 # ── FTSE 100 Endpoints ─────────────────────────────────────────────────────
 
 @app.get("/ftse100/", response_model=Ftse100PaginatedResponse)
@@ -3450,6 +3736,286 @@ async def get_ftse100_latest_batch(
     return Ftse100LatestResponse(data=items, count=len(items))
 
 
+
+
+@app.get("/ftse100/constituents/", response_model=Ftse100ConstituentResponse)
+async def get_ftse100_constituents(
+    sector: Optional[str] = Query(None, description="Filter by sector"),
+    industry: Optional[str] = Query(None, description="Filter by industry"),
+    search: Optional[str] = Query(None, description="Search code or name (case-insensitive partial match)"),
+    sort: Optional[str] = Query("code", description="Sort field: code, name"),
+    order: Optional[str] = Query("asc", description="Sort order: asc or desc"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(5000, ge=1, le=10000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    conditions = []
+
+    if sector:
+        conditions.append(Ftse100Constituent.sector == sector)
+    if industry:
+        conditions.append(Ftse100Constituent.industry == industry)
+    if search:
+        pattern = f"%{search}%"
+        conditions.append(
+            (Ftse100Constituent.code.ilike(pattern)) | (Ftse100Constituent.name.ilike(pattern))
+        )
+
+    count_query = select(func.count(Ftse100Constituent.code))
+    for c in conditions:
+        count_query = count_query.where(c)
+    cache_key = f"ftse100_cons|sector={sector}|industry={industry}|search={search}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
+
+    allowed_sorts = {"code", "name"}
+    sort_field = sort if sort in allowed_sorts else "code"
+    sort_col = getattr(Ftse100Constituent, sort_field)
+    offset = (page - 1) * per_page
+
+    data_query = select(Ftse100Constituent)
+    for c in conditions:
+        data_query = data_query.where(c)
+    data_query = data_query.order_by(
+        sort_col.asc() if order == "asc" else sort_col.desc()
+    ).offset(offset).limit(per_page)
+
+    result = await db.execute(data_query)
+    rows = result.scalars().all()
+
+    items = [
+        Ftse100ConstituentItem(
+            code=row.code,                          # type: ignore[arg-type]
+            name=row.name,                           # type: ignore[arg-type]
+            sector=row.sector,                       # type: ignore[arg-type]
+            industry=row.industry,                   # type: ignore[arg-type]
+            isin=row.isin,                           # type: ignore[arg-type]
+            currency=row.currency,                   # type: ignore[arg-type]
+        )
+        for row in rows
+    ]
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+    return Ftse100ConstituentResponse(
+        data=items,
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+
+@app.get("/etf/assets/", response_model=EtfIndexAssetListResponse)
+async def get_etf_assets(
+    search: Optional[str] = Query(None, description="Search code or name (case-insensitive partial match)"),
+    sort: Optional[str] = Query("code", description="Sort field: code, name"),
+    order: Optional[str] = Query("asc", description="Sort order: asc or desc"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(5000, ge=1, le=10000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    conditions = [EtfIndexAsset.type == "etf"]
+
+    if search:
+        pattern = f"%{search}%"
+        conditions.append(
+            (EtfIndexAsset.code.ilike(pattern)) | (EtfIndexAsset.name.ilike(pattern))
+        )
+
+    count_query = select(func.count(EtfIndexAsset.code))
+    for c in conditions:
+        count_query = count_query.where(c)
+    cache_key = f"etf_assets|search={search}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
+
+    allowed_sorts = {"code", "name"}
+    sort_field = sort if sort in allowed_sorts else "code"
+    sort_col = getattr(EtfIndexAsset, sort_field)
+    offset = (page - 1) * per_page
+
+    data_query = select(EtfIndexAsset)
+    for c in conditions:
+        data_query = data_query.where(c)
+    data_query = data_query.order_by(
+        sort_col.asc() if order == "asc" else sort_col.desc()
+    ).offset(offset).limit(per_page)
+
+    result = await db.execute(data_query)
+    rows = result.scalars().all()
+
+    items = [
+        EtfIndexAssetResponse(
+            code=row.code,                           # type: ignore[arg-type]
+            name=row.name,                           # type: ignore[arg-type]
+            exchange=row.exchange,                   # type: ignore[arg-type]
+            type=row.type,                           # type: ignore[arg-type]
+            isin=row.isin,                           # type: ignore[arg-type]
+            currency=row.currency,                   # type: ignore[arg-type]
+        )
+        for row in rows
+    ]
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+    return EtfIndexAssetListResponse(
+        data=items,
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+
+@app.get("/index/assets/", response_model=EtfIndexAssetListResponse)
+async def get_index_assets(
+    search: Optional[str] = Query(None, description="Search code or name (case-insensitive partial match)"),
+    sort: Optional[str] = Query("code", description="Sort field: code, name"),
+    order: Optional[str] = Query("asc", description="Sort order: asc or desc"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(5000, ge=1, le=10000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    conditions = [EtfIndexAsset.type == "index"]
+
+    if search:
+        pattern = f"%{search}%"
+        conditions.append(
+            (EtfIndexAsset.code.ilike(pattern)) | (EtfIndexAsset.name.ilike(pattern))
+        )
+
+    count_query = select(func.count(EtfIndexAsset.code))
+    for c in conditions:
+        count_query = count_query.where(c)
+    cache_key = f"index_assets|search={search}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
+
+    allowed_sorts = {"code", "name"}
+    sort_field = sort if sort in allowed_sorts else "code"
+    sort_col = getattr(EtfIndexAsset, sort_field)
+    offset = (page - 1) * per_page
+
+    data_query = select(EtfIndexAsset)
+    for c in conditions:
+        data_query = data_query.where(c)
+    data_query = data_query.order_by(
+        sort_col.asc() if order == "asc" else sort_col.desc()
+    ).offset(offset).limit(per_page)
+
+    result = await db.execute(data_query)
+    rows = result.scalars().all()
+
+    items = [
+        EtfIndexAssetResponse(
+            code=row.code,                           # type: ignore[arg-type]
+            name=row.name,                           # type: ignore[arg-type]
+            exchange=row.exchange,                   # type: ignore[arg-type]
+            type=row.type,                           # type: ignore[arg-type]
+            isin=row.isin,                           # type: ignore[arg-type]
+            currency=row.currency,                   # type: ignore[arg-type]
+        )
+        for row in rows
+    ]
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+    return EtfIndexAssetListResponse(
+        data=items,
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+
+@app.get("/gov-bond/assets/", response_model=GovBondAssetResponse)
+async def get_gov_bond_assets(
+    country: Optional[str] = Query(None, description="Filter by country (e.g., US, DE, JP)"),
+    type: Optional[str] = Query(None, description="Filter by type"),
+    search: Optional[str] = Query(None, description="Search code or name (case-insensitive partial match)"),
+    sort: Optional[str] = Query("code", description="Sort field: code, name"),
+    order: Optional[str] = Query("asc", description="Sort order: asc or desc"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(5000, ge=1, le=10000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    conditions = []
+
+    if country:
+        conditions.append(GovBondAsset.country == country.upper())
+    if type:
+        conditions.append(GovBondAsset.type == type)
+    if search:
+        pattern = f"%{search}%"
+        conditions.append(
+            (GovBondAsset.code.ilike(pattern)) | (GovBondAsset.name.ilike(pattern))
+        )
+
+    count_query = select(func.count(GovBondAsset.code))
+    for c in conditions:
+        count_query = count_query.where(c)
+    cache_key = f"gov_bond_assets|country={country}|type={type}|search={search}"
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(count_query)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
+
+    allowed_sorts = {"code", "name"}
+    sort_field = sort if sort in allowed_sorts else "code"
+    sort_col = getattr(GovBondAsset, sort_field)
+    offset = (page - 1) * per_page
+
+    data_query = select(GovBondAsset)
+    for c in conditions:
+        data_query = data_query.where(c)
+    data_query = data_query.order_by(
+        sort_col.asc() if order == "asc" else sort_col.desc()
+    ).offset(offset).limit(per_page)
+
+    result = await db.execute(data_query)
+    rows = result.scalars().all()
+
+    items = [
+        GovBondAssetItem(
+            code=row.code,                           # type: ignore[arg-type]
+            name=row.name,                           # type: ignore[arg-type]
+            exchange=row.exchange,                   # type: ignore[arg-type]
+            type=row.type,                           # type: ignore[arg-type]
+            currency=row.currency,                   # type: ignore[arg-type]
+            country=row.country,                      # type: ignore[arg-type]
+        )
+        for row in rows
+    ]
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+    return GovBondAssetResponse(
+        data=items,
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
 
 
 # ── US Treasury Rate Endpoints ───────────────────────────────────────────────

@@ -271,6 +271,25 @@ class CryptoAsset(Base):
     updated_at = Column(DateTime)
 
 
+class OhlcvUnified(Base):
+    __tablename__ = "ohlcv_unified"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ticker = Column(String(20), nullable=False)
+    exchange = Column(String(50), nullable=False)
+    asset_type = Column(String(50))
+    date = Column(Date, nullable=False)
+    open = Column(Numeric(18, 4))
+    high = Column(Numeric(18, 4))
+    low = Column(Numeric(18, 4))
+    close = Column(Numeric(18, 4))
+    adjusted_close = Column(Numeric(18, 4))
+    volume = Column(BigInteger)
+    created_at = Column(DateTime)
+    updated_at = Column(DateTime)
+    instrument_id = Column(UUID(as_uuid=True))
+
+
 class CommodityEOD(Base):
     __tablename__ = "commodities_eod"
 
