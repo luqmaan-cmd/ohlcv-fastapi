@@ -202,8 +202,8 @@ async def _ensure_tickers_table():
     Retries on DB connection failure with exponential backoff.
 
     The tickers table provides an Index Only Scan (~5ms) as the driving row
-    source for LATERAL joins, replacing SELECT DISTINCT on 43M+ rows (~8.6s).
-    The triggers keep it in sync as ohlcv_data rows are inserted/deleted.
+    source for LATERAL joins, replacing SELECT DISTINCT on ohlcv_unified.
+    The triggers keep it in sync as ohlcv_unified rows are inserted/deleted.
     """
     for attempt in range(1, MAX_STARTUP_RETRIES + 1):
         try:
@@ -235,7 +235,7 @@ async def _ensure_tickers_table():
                         DELETE FROM tickers
                         WHERE ticker = OLD.ticker
                         AND NOT EXISTS (
-                            SELECT 1 FROM ohlcv_data WHERE ticker = OLD.ticker
+                            SELECT 1 FROM ohlcv_unified WHERE ticker = OLD.ticker
                         );
                         RETURN OLD;
                     END;
@@ -249,7 +249,7 @@ async def _ensure_tickers_table():
                 if not trigger_exists.scalar():
                     await conn.execute(text("""
                         CREATE TRIGGER trg_sync_tickers
-                        AFTER INSERT ON ohlcv_data
+                        AFTER INSERT ON ohlcv_unified
                         FOR EACH ROW
                         EXECUTE FUNCTION sync_tickers()
                     """))
@@ -261,7 +261,7 @@ async def _ensure_tickers_table():
                 if not del_trigger_exists.scalar():
                     await conn.execute(text("""
                         CREATE TRIGGER trg_sync_tickers_on_delete
-                        AFTER DELETE ON ohlcv_data
+                        AFTER DELETE ON ohlcv_unified
                         FOR EACH ROW
                         EXECUTE FUNCTION sync_tickers_on_delete()
                     """))
@@ -272,7 +272,7 @@ async def _ensure_tickers_table():
                 if count == 0:
                     await conn.execute(text("""
                         INSERT INTO tickers (ticker)
-                        SELECT DISTINCT ticker FROM ohlcv_data
+                        SELECT DISTINCT ticker FROM ohlcv_unified
                         ON CONFLICT DO NOTHING
                     """))
 
@@ -323,15 +323,26 @@ def parse_comma_separated_preserve(value: Optional[str]) -> Optional[List[str]]:
     return [v.strip() for v in value.split(",") if v.strip()]
 
 
+def parse_ticker_exchange(ticker_input: str) -> tuple[str, str]:
+    """Parse 'AAPL.US' → ('AAPL', 'US'). Returns (ticker, exchange).
+    Raises ValueError if no exchange suffix is provided."""
+    if "." in ticker_input:
+        parts = ticker_input.rsplit(".", 1)
+        return parts[0].strip().upper(), parts[1].strip().upper()
+    raise ValueError(f"Ticker '{ticker_input}' must include exchange (e.g., {ticker_input}.US)")
+
+
 @app.get("/ohlcv/", response_model=PaginatedResponse)
 async def get_ohlcv_data(
-    ticker: Optional[str] = Query(None, description="Single ticker (e.g., AAPL)"),
-    tickers: Optional[str] = Query(None, description="Comma-separated tickers (e.g., AAPL,MSFT,GOOGL)"),
+    ticker: Optional[str] = Query(None, description="Single ticker (e.g., AAPL.US)"),
+    tickers: Optional[str] = Query(None, description="Comma-separated tickers (e.g., AAPL.US,MSFT.US,BP.LSE)"),
+    exchange: Optional[str] = Query(None, description="Filter by exchange (e.g., US, LSE, CC). Used when no tickers specified."),
+    asset_type: Optional[str] = Query(None, description="Filter by asset type (e.g., ETF, INDEX, FOREX, Cryptocurrencies, Government Bonds)"),
     asset_isin: Optional[str] = Query(None),
     asset_isins: Optional[str] = Query(None, description="Comma-separated ISINs"),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
-    year: Optional[int] = Query(None, ge=1900, le=2100),
+    year: int = Query(..., ge=1900, le=2100, description="Required for partition pruning"),
     month: Optional[int] = Query(None, ge=1, le=12),
     open_min: Optional[Decimal] = Query(None),
     open_max: Optional[Decimal] = Query(None),
@@ -346,19 +357,40 @@ async def get_ohlcv_data(
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
-    ticker_list = parse_comma_separated(tickers) or ([ticker.upper()] if ticker else None)
+    # Parse tickers — requires TICKER.EXCHANGE format (e.g., AAPL.US)
+    raw_tickers = parse_comma_separated_preserve(tickers) or ([ticker] if ticker else None)
+    ticker_exchange_pairs: list[tuple[str, str]] = []
+    if raw_tickers:
+        try:
+            ticker_exchange_pairs = [parse_ticker_exchange(t) for t in raw_tickers]
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
     isin_list = parse_comma_separated(asset_isins) or ([asset_isin.upper()] if asset_isin else None)
     
-    query = select(OhlcvUnified).where(OhlcvUnified.exchange == "US")
-    count_query = select(func.count(OhlcvUnified.id)).where(OhlcvUnified.exchange == "US")
-    
-    if ticker_list:
-        if len(ticker_list) == 1:
-            query = query.where(OhlcvUnified.ticker == ticker_list[0])
-            count_query = count_query.where(OhlcvUnified.ticker == ticker_list[0])
+    query = select(OhlcvUnified)
+    count_query = select(func.count(OhlcvUnified.id))
+
+    if ticker_exchange_pairs:
+        if len(ticker_exchange_pairs) == 1:
+            t, ex = ticker_exchange_pairs[0]
+            query = query.where(OhlcvUnified.ticker == t, OhlcvUnified.exchange == ex)
+            count_query = count_query.where(OhlcvUnified.ticker == t, OhlcvUnified.exchange == ex)
         else:
-            query = query.where(OhlcvUnified.ticker.in_(ticker_list))
-            count_query = count_query.where(OhlcvUnified.ticker.in_(ticker_list))
+            # Build OR conditions for multiple ticker+exchange pairs
+            pair_conditions = [
+                and_(OhlcvUnified.ticker == t, OhlcvUnified.exchange == ex)
+                for t, ex in ticker_exchange_pairs
+            ]
+            query = query.where(or_(*pair_conditions))
+            count_query = count_query.where(or_(*pair_conditions))
+    elif exchange:
+        query = query.where(OhlcvUnified.exchange == exchange.upper())
+        count_query = count_query.where(OhlcvUnified.exchange == exchange.upper())
+
+    if asset_type:
+        query = query.where(OhlcvUnified.asset_type == asset_type)
+        count_query = count_query.where(OhlcvUnified.asset_type == asset_type)
     
     if isin_list:
         if len(isin_list) == 1:
@@ -369,8 +401,10 @@ async def get_ohlcv_data(
             count_query = count_query.where(OhlcvUnified.instrument_id.in_(isin_list))
     
     if year:
-        query = query.where(func.extract("year", OhlcvUnified.date) == year)
-        count_query = count_query.where(func.extract("year", OhlcvUnified.date) == year)
+        year_start = date(year, 1, 1)
+        year_end = date(year, 12, 31)
+        query = query.where(OhlcvUnified.date >= year_start, OhlcvUnified.date <= year_end)
+        count_query = count_query.where(OhlcvUnified.date >= year_start, OhlcvUnified.date <= year_end)
     
     if month:
         query = query.where(func.extract("month", OhlcvUnified.date) == month)
@@ -411,7 +445,7 @@ async def get_ohlcv_data(
     offset = (page - 1) * per_page
     query = query.offset(offset).limit(per_page)
 
-    cache_key = f"ohlcv|tickers={ticker_list}|isins={isin_list}|year={year}|month={month}|start={start_date}|end={end_date}|omin={open_min}|omax={open_max}|cmin={close_min}|cmax={close_max}|vmin={volume_min}|vmax={volume_max}"
+    cache_key = f"ohlcv|pairs={ticker_exchange_pairs}|exchange={exchange}|asset_type={asset_type}|isins={isin_list}|year={year}|month={month}|start={start_date}|end={end_date}|omin={open_min}|omax={open_max}|cmin={close_min}|cmax={close_max}|vmin={volume_min}|vmax={volume_max}"
     total = _get_cached_count(cache_key)
     if total is None:
         total_result = await db.execute(count_query)
@@ -436,49 +470,88 @@ async def get_ohlcv_data(
 
 @app.get("/ohlcv/latest_close/", response_model=BatchLatestResponse)
 async def get_batch_latest_close_ohlcv(
-    tickers: Optional[str] = Query(None, description="Comma-separated tickers (e.g., AAPL,MSFT,GOOGL). If omitted, returns latest for all tickers."),
+    tickers: Optional[str] = Query(None, description="Comma-separated tickers (e.g., AAPL.US,MSFT.US,BP.LSE). If omitted, returns latest for all tickers."),
+    exchange: Optional[str] = Query(None, description="Filter by exchange (e.g., US, LSE, CC). Used when no specific tickers are given."),
+    asset_type: Optional[str] = Query(None, description="Filter by asset type (e.g., ETF, INDEX, FOREX, Cryptocurrencies, Government Bonds)"),
+    sort_by: Optional[str] = Query(None, pattern="^(ticker|volume|close|open|high|low)$"),
+    per_page: Optional[int] = Query(None, ge=1, le=5000, description="Limit number of results (e.g., 100 for top-100 by volume)"),
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
-    ticker_list = parse_comma_separated(tickers)
+    # Parse tickers — requires TICKER.EXCHANGE format (e.g., AAPL.US)
+    raw_tickers = parse_comma_separated_preserve(tickers)
+    ticker_exchange_pairs: list[tuple[str, str]] = []
+    if raw_tickers:
+        try:
+            ticker_exchange_pairs = [parse_ticker_exchange(t) for t in raw_tickers]
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
-    if ticker_list:
-        ticker_values = ", ".join(f"('{t}')" for t in ticker_list)
+    cutoff = date.today() - timedelta(days=7)
+
+    ex_filter = f"AND exchange = '{exchange.upper()}'" if exchange else ("AND exchange = 'US'" if not ticker_exchange_pairs else "")
+    at_filter = f"AND asset_type = '{asset_type}'" if asset_type else ""
+
+    if ticker_exchange_pairs:
+        # Build VALUES list with (ticker, exchange) pairs
+        ticker_values = ", ".join(f"('{t}','{ex}')" for t, ex in ticker_exchange_pairs)
         query = text(f"""
             SELECT t.ticker, o.id, o.date, o.open, o.high, o.low, o.close,
                    o.adjusted_close, o.volume, o.instrument_id,
+                   o.exchange, o.asset_type,
                    o.created_at, o.updated_at
-            FROM (VALUES {ticker_values}) AS t(ticker)
+            FROM (VALUES {ticker_values}) AS t(ticker, exchange)
             CROSS JOIN LATERAL (
                 SELECT id, date, open, high, low, close, adjusted_close,
-                       volume, instrument_id, created_at, updated_at
+                       volume, instrument_id, exchange, asset_type,
+                       created_at, updated_at
                 FROM ohlcv_unified
-                WHERE ticker = t.ticker AND exchange = 'US'
-                      AND date >= CURRENT_DATE - INTERVAL '7 days'
+                WHERE ticker = t.ticker
+                      AND exchange = t.exchange
+                      {at_filter}
+                      AND date >= :cutoff
                 ORDER BY date DESC
                 LIMIT 1
             ) o
             ORDER BY t.ticker ASC
         """)
     else:
-        query = text("""
+        sort_clause = "d.ticker ASC"
+        limit_clause = ""
+        if sort_by == "volume":
+            sort_clause = "o.volume DESC NULLS LAST"
+        elif sort_by:
+            sort_col_map = {
+                "close": "o.close", "open": "o.open",
+                "high": "o.high", "low": "o.low",
+            }
+            sort_clause = f"{sort_col_map.get(sort_by, 'o.close')} DESC NULLS LAST"
+        if sort_by == "volume" and per_page:
+            limit_clause = f"LIMIT {per_page}"
+
+        query = text(f"""
             SELECT d.ticker, o.id, o.date, o.open, o.high, o.low, o.close,
                    o.adjusted_close, o.volume, o.instrument_id,
+                   o.exchange, o.asset_type,
                    o.created_at, o.updated_at
             FROM tickers d
             CROSS JOIN LATERAL (
                 SELECT id, date, open, high, low, close, adjusted_close,
-                       volume, instrument_id, created_at, updated_at
+                       volume, instrument_id, exchange, asset_type,
+                       created_at, updated_at
                 FROM ohlcv_unified
-                WHERE ticker = d.ticker AND exchange = 'US'
-                      AND date >= CURRENT_DATE - INTERVAL '7 days'
+                WHERE ticker = d.ticker
+                      {ex_filter}
+                      {at_filter}
+                      AND date >= :cutoff
                 ORDER BY date DESC
                 LIMIT 1
             ) o
-            ORDER BY d.ticker ASC
+            ORDER BY {sort_clause}
+            {limit_clause}
         """)
 
-    result = await db.execute(query)
+    result = await db.execute(query, {"cutoff": cutoff})
     rows = result.fetchall()
 
     items = [
@@ -493,6 +566,8 @@ async def get_batch_latest_close_ohlcv(
             adjusted_close=row.adjusted_close,
             volume=row.volume,
             instrument_id=row.instrument_id,
+            exchange=row.exchange,
+            asset_type=row.asset_type,
             created_at=row.created_at,
             updated_at=row.updated_at
         )
@@ -506,11 +581,23 @@ async def get_batch_latest_close_ohlcv(
 
 
 @app.get("/ohlcv/latest_close/{ticker}", response_model=OhlcvDataResponse)
-async def get_latest_close_ohlcv(ticker: str, db: AsyncSession = Depends(get_db), api_key: str = Depends(verify_api_key)):
+async def get_latest_close_ohlcv(
+    ticker: str,
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Returns the latest OHLCV record for a single ticker.
+    Ticker format: TICKER.EXCHANGE (e.g., AAPL.US, BP.LSE, BTC-USD.CC). Required.
+    """
+    try:
+        t, ex = parse_ticker_exchange(ticker)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     query = select(OhlcvUnified).where(
         and_(
-            OhlcvUnified.ticker == ticker.upper(),
-            OhlcvUnified.exchange == "US",
+            OhlcvUnified.ticker == t,
+            OhlcvUnified.exchange == ex,
             OhlcvUnified.date >= date.today() - timedelta(days=7)
         )
     ).order_by(OhlcvUnified.date.desc()).limit(1)
@@ -526,27 +613,64 @@ async def get_latest_close_ohlcv(ticker: str, db: AsyncSession = Depends(get_db)
 
 @app.get("/ohlcv/latest/", response_model=RealTimeOhlcvResponse)
 async def get_realtime_latest_ohlcv(
-    tickers: str = Query(..., description="Comma-separated tickers (e.g., AAPL,MSFT,GOOGL). Required."),
+    tickers: str = Query(..., description="Comma-separated tickers in TICKER.EXCHANGE format (e.g., AAPL.US,MSFT.US,BP.LSE). Required."),
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key),
 ):
     """
     Returns real-time OHLCV data from EODHD for the specified tickers.
-    The `tickers` parameter is required.
+    Ticker format: TICKER.EXCHANGE (e.g., AAPL.US, BP.LSE, BTCUSD.CC).
     """
-    ticker_list = parse_comma_separated(tickers)
-    if not ticker_list:
+    raw_tickers = parse_comma_separated_preserve(tickers)
+    if not raw_tickers:
         raise HTTPException(status_code=400, detail="tickers parameter is required")
 
-    pairs = [(t, "US") for t in ticker_list]
+    # Parse TICKER.EXCHANGE pairs
+    try:
+        pairs = [parse_ticker_exchange(t) for t in raw_tickers]
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Validate tickers exist in assets table (by code)
+    ticker_codes = [t for t, _ in pairs]
+    asset_query = select(Asset.code).where(Asset.code.in_(ticker_codes))
+    result = await db.execute(asset_query)
+    found_codes = {row[0] for row in result.all()}
+
+    missing = [t for t in ticker_codes if t not in found_codes]
+    if missing:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No asset found with tickers: {', '.join(missing)}",
+        )
+
     items = await fetch_eodhd_realtime_batch(pairs)
     return RealTimeOhlcvResponse(data=items, count=len(items))
 
 
 @app.get("/ohlcv/stats/{ticker}", response_model=OhlcvStatsResponse)
-async def get_ohlcv_stats(ticker: str, db: AsyncSession = Depends(get_db), api_key: str = Depends(verify_api_key)):
-    ticker = ticker.upper()
-    
+async def get_ohlcv_stats(
+    ticker: str,
+    start_date: Optional[date] = Query(None, description="Start date for stats (enables partition pruning)"),
+    end_date: Optional[date] = Query(None, description="End date for stats (enables partition pruning)"),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Returns OHLCV statistics for a ticker.
+    Ticker format: TICKER.EXCHANGE (e.g., AAPL.US, BP.LSE). Required.
+    """
+    try:
+        t, ex = parse_ticker_exchange(ticker)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    stats_conditions = [OhlcvUnified.ticker == t, OhlcvUnified.exchange == ex]
+    if start_date:
+        stats_conditions.append(OhlcvUnified.date >= start_date)
+    if end_date:
+        stats_conditions.append(OhlcvUnified.date <= end_date)
+
     stats_query = select(
         func.count(OhlcvUnified.id).label("count"),
         func.min(OhlcvUnified.date).label("earliest_date"),
@@ -555,7 +679,7 @@ async def get_ohlcv_stats(ticker: str, db: AsyncSession = Depends(get_db), api_k
         func.min(OhlcvUnified.close).label("min_close"),
         func.max(OhlcvUnified.close).label("max_close"),
         func.avg(OhlcvUnified.close).label("avg_close")
-    ).where(and_(OhlcvUnified.ticker == ticker, OhlcvUnified.exchange == "US"))
+    ).where(and_(*stats_conditions))
     
     result = await db.execute(stats_query)
     stats = result.one()
@@ -563,7 +687,7 @@ async def get_ohlcv_stats(ticker: str, db: AsyncSession = Depends(get_db), api_k
     # Access Row fields by index to avoid collision with tuple's .count() method
     stats_count = stats[0]
     if stats_count == 0:
-        raise HTTPException(status_code=404, detail=f"No OHLCV data found for ticker: {ticker}")
+        raise HTTPException(status_code=404, detail=f"No OHLCV data found for ticker: {t}.{ex}")
     
     fifty_two_weeks_ago = date.today() - timedelta(weeks=52)
     fifty_two_week_query = select(
@@ -571,8 +695,8 @@ async def get_ohlcv_stats(ticker: str, db: AsyncSession = Depends(get_db), api_k
         func.min(OhlcvUnified.close).label("low")
     ).where(
         and_(
-            OhlcvUnified.ticker == ticker,
-            OhlcvUnified.exchange == "US",
+            OhlcvUnified.ticker == t,
+            OhlcvUnified.exchange == ex,
             OhlcvUnified.date >= fifty_two_weeks_ago
         )
     )
@@ -581,7 +705,7 @@ async def get_ohlcv_stats(ticker: str, db: AsyncSession = Depends(get_db), api_k
     fw_stats = fw_result.one()
     
     return OhlcvStatsResponse(
-        ticker=ticker,
+        ticker=f"{t}.{ex}",
         count=stats_count,
         earliest_date=stats[1],
         latest_date=stats[2],
@@ -606,128 +730,42 @@ async def get_all_tickers(db: AsyncSession = Depends(get_db), api_key: str = Dep
 @app.get("/assets/{ticker}", response_model=AssetLookupResponse)
 async def lookup_asset(
     ticker: str,
-    exchange: Optional[str] = Query(None, description="Filter by exchange (e.g., US, LSE, CC)"),
+    exchange: Optional[str] = Query(None, description="Filter by exchange (e.g., NASDAQ, LSE, CC)"),
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Look up asset metadata by ticker across all asset tables.
-    Returns matching assets from US stocks, UK stocks, ETFs, indices,
-    government bonds, FX, crypto, and FTSE 100 constituents.
+    Look up asset metadata by ticker from the unified assets table.
     Use `exchange` to disambiguate tickers that exist on multiple exchanges.
     """
     ticker = ticker.upper()
-    items: list[AssetLookupItem] = []
 
-    # US stocks (assets table — keyed by code)
     q = select(Asset).where(Asset.code == ticker)
     if exchange:
-        q = q.where(Asset.country_name == exchange)
-    result = await db.execute(q)
-    for row in result.scalars().all():
-        items.append(AssetLookupItem(
-            code=row.code,                          # type: ignore[arg-type]
-            name=row.name,                           # type: ignore[arg-type]
-            exchange="US",                           # type: ignore[arg-type]
-            asset_type="stock",
-            isin=row.isin,                           # type: ignore[arg-type]
-            description=row.description,             # type: ignore[arg-type]
-            gic_sector=row.gic_sector,               # type: ignore[arg-type]
-            country=row.country_name,                # type: ignore[arg-type]
-        ))
+        q = q.where(Asset.exchange == exchange.upper())
 
-    # UK stocks
-    q = select(UkAsset).where(UkAsset.code == ticker)
     result = await db.execute(q)
-    for row in result.scalars().all():
-        items.append(AssetLookupItem(
-            code=row.code,                           # type: ignore[arg-type]
-            name=row.name,                            # type: ignore[arg-type]
-            exchange=row.exchange,                    # type: ignore[arg-type]
-            asset_type="stock",
-            sector=row.sector,                        # type: ignore[arg-type]
-            industry=row.industry,                    # type: ignore[arg-type]
-            isin=row.isin,                            # type: ignore[arg-type]
-            currency=row.currency,                    # type: ignore[arg-type]
-        ))
+    rows = result.scalars().all()
 
-    # ETFs and Indices
-    q = select(EtfIndexAsset).where(EtfIndexAsset.code == ticker)
-    result = await db.execute(q)
-    for row in result.scalars().all():
-        items.append(AssetLookupItem(
-            code=row.code,                           # type: ignore[arg-type]
-            name=row.name,                           # type: ignore[arg-type]
-            exchange=row.exchange,                   # type: ignore[arg-type]
-            asset_type=row.type,                     # type: ignore[arg-type]
-            isin=row.isin,                           # type: ignore[arg-type]
-            currency=row.currency,                   # type: ignore[arg-type]
-        ))
-
-    # Government bonds
-    q = select(GovBondAsset).where(GovBondAsset.code == ticker)
-    result = await db.execute(q)
-    for row in result.scalars().all():
-        items.append(AssetLookupItem(
-            code=row.code,                           # type: ignore[arg-type]
-            name=row.name,                           # type: ignore[arg-type]
-            exchange=row.exchange,                   # type: ignore[arg-type]
-            asset_type=row.type,                     # type: ignore[arg-type]
-            currency=row.currency,                   # type: ignore[arg-type]
-            country=row.country,                     # type: ignore[arg-type]
-        ))
-
-    # FX
-    q = select(FxAsset).where(FxAsset.code == ticker)
-    result = await db.execute(q)
-    for row in result.scalars().all():
-        items.append(AssetLookupItem(
-            code=row.code,                           # type: ignore[arg-type]
-            name=row.name,                           # type: ignore[arg-type]
-            exchange=row.exchange,                   # type: ignore[arg-type]
-            asset_type="fx",
-            base_currency=row.base_currency,         # type: ignore[arg-type]
-            quote_currency=row.quote_currency,       # type: ignore[arg-type]
-            currency=row.currency,                   # type: ignore[arg-type]
-        ))
-
-    # Crypto
-    q = select(CryptoAsset).where(CryptoAsset.code == ticker)
-    result = await db.execute(q)
-    for row in result.scalars().all():
-        items.append(AssetLookupItem(
-            code=row.code,                           # type: ignore[arg-type]
-            name=row.name,                           # type: ignore[arg-type]
-            exchange=row.exchange,                   # type: ignore[arg-type]
-            asset_type="crypto",
-            base_currency=row.base_currency,         # type: ignore[arg-type]
-            quote_currency=row.quote_currency,       # type: ignore[arg-type]
-            currency=row.currency,                   # type: ignore[arg-type]
-        ))
-
-    # FTSE 100 constituents
-    q = select(Ftse100Constituent).where(Ftse100Constituent.code == ticker)
-    result = await db.execute(q)
-    for row in result.scalars().all():
-        items.append(AssetLookupItem(
-            code=row.code,                           # type: ignore[arg-type]
-            name=row.name,                           # type: ignore[arg-type]
-            exchange="LSE",                           # type: ignore[arg-type]
-            asset_type="stock",
-            sector=row.sector,                        # type: ignore[arg-type]
-            industry=row.industry,                    # type: ignore[arg-type]
-            isin=row.isin,                            # type: ignore[arg-type]
-            currency=row.currency,                   # type: ignore[arg-type]
-        ))
+    items = [
+        AssetLookupItem(
+            code=row.code,                              # type: ignore[arg-type]
+            name=row.name,                               # type: ignore[arg-type]
+            exchange=row.exchange,                        # type: ignore[arg-type]
+            asset_type=row.type,                         # type: ignore[arg-type]
+            isin=row.isin,                               # type: ignore[arg-type]
+            currency=row.currency_code,                  # type: ignore[arg-type]
+            description=row.description,                 # type: ignore[arg-type]
+            sector=row.sector,                           # type: ignore[arg-type]
+            industry=row.industry,                       # type: ignore[arg-type]
+            country=row.country_name,                    # type: ignore[arg-type]
+            gic_sector=row.gic_sector,                  # type: ignore[arg-type]
+        )
+        for row in rows
+    ]
 
     if not items:
         raise HTTPException(status_code=404, detail=f"No asset found with ticker: {ticker}")
-
-    if exchange:
-        items = [i for i in items if i.exchange and i.exchange.upper() == exchange.upper()]
-
-    if not items:
-        raise HTTPException(status_code=404, detail=f"No asset found with ticker: {ticker} on exchange: {exchange}")
 
     return AssetLookupResponse(data=items, count=len(items))
 
@@ -744,7 +782,7 @@ async def get_ohlcv_by_id(ohlcv_id: str, db: AsyncSession = Depends(get_db), api
 
 @app.post("/ohlcv/", response_model=OhlcvDataResponse, status_code=201)
 async def create_ohlcv_data(ohlcv: OhlcvDataCreate, db: AsyncSession = Depends(get_db), api_key: str = Depends(verify_api_key)):
-    db_ohlcv = OhlcvData(**ohlcv.model_dump())
+    db_ohlcv = OhlcvUnified(**ohlcv.model_dump())
     db.add(db_ohlcv)
     try:
         await db.commit()
@@ -767,7 +805,7 @@ async def bulk_create_ohlcv_data(
     
     for i, record in enumerate(bulk_data.records):
         try:
-            db_ohlcv = OhlcvData(**record.model_dump())
+            db_ohlcv = OhlcvUnified(**record.model_dump())
             db.add(db_ohlcv)
             await db.flush()
             inserted += 1
@@ -793,7 +831,7 @@ async def update_ohlcv_data(
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
-    query = select(OhlcvData).where(OhlcvData.id == ohlcv_id)
+    query = select(OhlcvUnified).where(OhlcvUnified.id == ohlcv_id)
     result = await db.execute(query)
     db_ohlcv = result.scalar_one_or_none()
     
@@ -816,7 +854,7 @@ async def update_ohlcv_data(
 
 @app.delete("/ohlcv/{ohlcv_id}", status_code=204)
 async def delete_ohlcv_data(ohlcv_id: str, db: AsyncSession = Depends(get_db), api_key: str = Depends(verify_api_key)):
-    query = select(OhlcvData).where(OhlcvData.id == ohlcv_id)
+    query = select(OhlcvUnified).where(OhlcvUnified.id == ohlcv_id)
     result = await db.execute(query)
     db_ohlcv = result.scalar_one_or_none()
     
@@ -4747,8 +4785,8 @@ _FORBIDDEN_KEYWORDS = {
 
 # Guardrail 2: Allowed tables (whitelist)
 ALLOWED_TABLES = {
-    "ohlcv_data", "assets", "sp500_constituents", "ticker_aliases", "tickers",
-    "ohlcv_data_etf_index", "etf_index_assets",
+    "ohlcv_unified", "assets", "sp500_constituents", "ticker_aliases", "tickers",
+    "ohlcv_data", "ohlcv_data_etf_index", "etf_index_assets",
     "ohlcv_data_gov_bonds", "gov_bond_assets",
     "ohlcv_data_fx", "fx_assets",
     "ohlcv_data_uk", "uk_assets", "ftse100_constituents",

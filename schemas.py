@@ -22,7 +22,8 @@ class OhlcvDataBase(BaseModel):
 
 
 class OhlcvDataCreate(OhlcvDataBase):
-    pass
+    exchange: Optional[str] = None
+    asset_type: Optional[str] = None
 
 
 class OhlcvDataBulkCreate(BaseModel):
@@ -39,10 +40,15 @@ class OhlcvDataUpdate(BaseModel):
     adjusted_close: Optional[Decimal] = None
     volume: Optional[int] = None
     asset_isin: Optional[str] = None
+    instrument_id: Optional[UUID] = None
+    exchange: Optional[str] = None
+    asset_type: Optional[str] = None
 
 
 class OhlcvDataResponse(OhlcvDataBase):
     id: UUID
+    exchange: Optional[str] = None
+    asset_type: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
