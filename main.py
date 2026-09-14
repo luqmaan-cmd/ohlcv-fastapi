@@ -757,34 +757,117 @@ async def lookup_asset(
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Look up asset metadata by ticker from the unified assets table.
+    Look up asset metadata by ticker across all asset tables.
+    Returns matching assets from the unified assets table first, then falls
+    back to per-class tables (crypto, FX, UK, ETF/index, gov bonds, FTSE 100).
     Use `exchange` to disambiguate tickers that exist on multiple exchanges.
     """
     ticker = ticker.upper()
+    items: list[AssetLookupItem] = []
 
+    # 1. Unified assets table
     q = select(Asset).where(Asset.code == ticker)
     if exchange:
         q = q.where(Asset.exchange == exchange.upper())
-
     result = await db.execute(q)
-    rows = result.scalars().all()
+    for row in result.scalars().all():
+        items.append(AssetLookupItem(
+            code=row.code,                          # type: ignore[arg-type]
+            name=row.name,                           # type: ignore[arg-type]
+            exchange=row.exchange,                  # type: ignore[arg-type]
+            asset_type=row.type,                    # type: ignore[arg-type]
+            isin=row.isin,                          # type: ignore[arg-type]
+            currency=row.currency_code,             # type: ignore[arg-type]
+            description=row.description,            # type: ignore[arg-type]
+            sector=row.sector,                      # type: ignore[arg-type]
+            industry=row.industry,                  # type: ignore[arg-type]
+            country=row.country_name,               # type: ignore[arg-type]
+            gic_sector=row.gic_sector,             # type: ignore[arg-type]
+        ))
 
-    items = [
-        AssetLookupItem(
-            code=row.code,                              # type: ignore[arg-type]
-            name=row.name,                               # type: ignore[arg-type]
-            exchange=row.exchange,                        # type: ignore[arg-type]
-            asset_type=row.type,                         # type: ignore[arg-type]
-            isin=row.isin,                               # type: ignore[arg-type]
-            currency=row.currency_code,                  # type: ignore[arg-type]
-            description=row.description,                 # type: ignore[arg-type]
-            sector=row.sector,                           # type: ignore[arg-type]
-            industry=row.industry,                       # type: ignore[arg-type]
-            country=row.country_name,                    # type: ignore[arg-type]
-            gic_sector=row.gic_sector,                  # type: ignore[arg-type]
-        )
-        for row in rows
-    ]
+    # 2. UK stocks
+    q = select(UkAsset).where(UkAsset.code == ticker)
+    result = await db.execute(q)
+    for row in result.scalars().all():
+        items.append(AssetLookupItem(
+            code=row.code,                          # type: ignore[arg-type]
+            name=row.name,                          # type: ignore[arg-type]
+            exchange=row.exchange,                  # type: ignore[arg-type]
+            asset_type="stock",                     # type: ignore[arg-type]
+            sector=row.sector,                      # type: ignore[arg-type]
+            industry=row.industry,                  # type: ignore[arg-type]
+            isin=row.isin,                          # type: ignore[arg-type]
+            currency=row.currency,                  # type: ignore[arg-type]
+        ))
+
+    # 3. ETFs and Indices
+    q = select(EtfIndexAsset).where(EtfIndexAsset.code == ticker)
+    result = await db.execute(q)
+    for row in result.scalars().all():
+        items.append(AssetLookupItem(
+            code=row.code,                          # type: ignore[arg-type]
+            name=row.name,                          # type: ignore[arg-type]
+            exchange=row.exchange,                  # type: ignore[arg-type]
+            asset_type=row.type,                    # type: ignore[arg-type]
+            isin=row.isin,                          # type: ignore[arg-type]
+            currency=row.currency,                  # type: ignore[arg-type]
+        ))
+
+    # 4. Government bonds
+    q = select(GovBondAsset).where(GovBondAsset.code == ticker)
+    result = await db.execute(q)
+    for row in result.scalars().all():
+        items.append(AssetLookupItem(
+            code=row.code,                          # type: ignore[arg-type]
+            name=row.name,                          # type: ignore[arg-type]
+            exchange=row.exchange,                  # type: ignore[arg-type]
+            asset_type=row.type,                    # type: ignore[arg-type]
+            currency=row.currency,                  # type: ignore[arg-type]
+            country=row.country,                    # type: ignore[arg-type]
+        ))
+
+    # 5. FX
+    q = select(FxAsset).where(FxAsset.code == ticker)
+    result = await db.execute(q)
+    for row in result.scalars().all():
+        items.append(AssetLookupItem(
+            code=row.code,                          # type: ignore[arg-type]
+            name=row.name,                          # type: ignore[arg-type]
+            exchange=row.exchange,                  # type: ignore[arg-type]
+            asset_type="fx",                         # type: ignore[arg-type]
+            base_currency=row.base_currency,        # type: ignore[arg-type]
+            quote_currency=row.quote_currency,      # type: ignore[arg-type]
+            currency=row.currency,                  # type: ignore[arg-type]
+        ))
+
+    # 6. Crypto
+    q = select(CryptoAsset).where(CryptoAsset.code == ticker)
+    result = await db.execute(q)
+    for row in result.scalars().all():
+        items.append(AssetLookupItem(
+            code=row.code,                          # type: ignore[arg-type]
+            name=row.name,                          # type: ignore[arg-type]
+            exchange=row.exchange,                  # type: ignore[arg-type]
+            asset_type="crypto",                    # type: ignore[arg-type]
+            base_currency=row.base_currency,        # type: ignore[arg-type]
+            quote_currency=row.quote_currency,      # type: ignore[arg-type]
+            currency=row.currency,                  # type: ignore[arg-type]
+        ))
+
+    # 7. FTSE 100 constituents
+    q = select(Ftse100Constituent).where(Ftse100Constituent.code == ticker)
+    result = await db.execute(q)
+    for row in result.scalars().all():
+        items.append(AssetLookupItem(
+            code=row.code,                          # type: ignore[arg-type]
+            name=row.name,                          # type: ignore[arg-type]
+            exchange="LSE",                          # type: ignore[arg-type]
+            asset_type="stock",                     # type: ignore[arg-type]
+            sector=row.sector,                      # type: ignore[arg-type]
+            industry=row.industry,                  # type: ignore[arg-type]
+            isin=row.isin,                          # type: ignore[arg-type]
+            currency=row.currency,                  # type: ignore[arg-type]
+        ))
 
     if not items:
         raise HTTPException(status_code=404, detail=f"No asset found with ticker: {ticker}")
