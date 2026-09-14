@@ -334,15 +334,15 @@ def parse_ticker_exchange(ticker_input: str) -> tuple[str, str]:
 
 @app.get("/ohlcv/", response_model=PaginatedResponse)
 async def get_ohlcv_data(
-    ticker: Optional[str] = Query(None, description="Single ticker (e.g., AAPL.US)"),
-    tickers: Optional[str] = Query(None, description="Comma-separated tickers (e.g., AAPL.US,MSFT.US,BP.LSE)"),
+    ticker: Optional[str] = Query(None, description="Single ticker (e.g., AAPL.US or AAPL)"),
+    tickers: Optional[str] = Query(None, description="Comma-separated tickers (e.g., AAPL.US,MSFT.US,BP.LSE or AAPL,MSFT). Bare tickers default to US."),
     exchange: Optional[str] = Query(None, description="Filter by exchange (e.g., US, LSE, CC). Used when no tickers specified."),
     asset_type: Optional[str] = Query(None, description="Filter by asset type (e.g., ETF, INDEX, FOREX, Cryptocurrencies, Government Bonds)"),
     asset_isin: Optional[str] = Query(None),
     asset_isins: Optional[str] = Query(None, description="Comma-separated ISINs"),
     start_date: Optional[date] = Query(None),
     end_date: Optional[date] = Query(None),
-    year: int = Query(..., ge=1900, le=2100, description="Required for partition pruning"),
+    year: Optional[int] = Query(None, ge=1900, le=2100, description="Year for partition pruning (optional)"),
     month: Optional[int] = Query(None, ge=1, le=12),
     open_min: Optional[Decimal] = Query(None),
     open_max: Optional[Decimal] = Query(None),
@@ -357,14 +357,18 @@ async def get_ohlcv_data(
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
-    # Parse tickers — requires TICKER.EXCHANGE format (e.g., AAPL.US)
+    # Parse tickers — accept both TICKER.EXCHANGE and bare tickers (auto-append US)
     raw_tickers = parse_comma_separated_preserve(tickers) or ([ticker] if ticker else None)
     ticker_exchange_pairs: list[tuple[str, str]] = []
     if raw_tickers:
-        try:
-            ticker_exchange_pairs = [parse_ticker_exchange(t) for t in raw_tickers]
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        for t in raw_tickers:
+            if "." in t:
+                try:
+                    ticker_exchange_pairs.append(parse_ticker_exchange(t))
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+            else:
+                ticker_exchange_pairs.append((t.upper(), "US"))
 
     isin_list = parse_comma_separated(asset_isins) or ([asset_isin.upper()] if asset_isin else None)
     
@@ -387,6 +391,9 @@ async def get_ohlcv_data(
     elif exchange:
         query = query.where(OhlcvUnified.exchange == exchange.upper())
         count_query = count_query.where(OhlcvUnified.exchange == exchange.upper())
+    else:
+        query = query.where(OhlcvUnified.exchange == "US")
+        count_query = count_query.where(OhlcvUnified.exchange == "US")
 
     if asset_type:
         query = query.where(OhlcvUnified.asset_type == asset_type)
@@ -470,7 +477,7 @@ async def get_ohlcv_data(
 
 @app.get("/ohlcv/latest_close/", response_model=BatchLatestResponse)
 async def get_batch_latest_close_ohlcv(
-    tickers: Optional[str] = Query(None, description="Comma-separated tickers (e.g., AAPL.US,MSFT.US,BP.LSE). If omitted, returns latest for all tickers."),
+    tickers: Optional[str] = Query(None, description="Comma-separated tickers (e.g., AAPL.US,MSFT.US or AAPL,MSFT). Bare tickers default to US. If omitted, returns latest for all tickers."),
     exchange: Optional[str] = Query(None, description="Filter by exchange (e.g., US, LSE, CC). Used when no specific tickers are given."),
     asset_type: Optional[str] = Query(None, description="Filter by asset type (e.g., ETF, INDEX, FOREX, Cryptocurrencies, Government Bonds)"),
     sort_by: Optional[str] = Query(None, pattern="^(ticker|volume|close|open|high|low)$"),
@@ -478,14 +485,18 @@ async def get_batch_latest_close_ohlcv(
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key)
 ):
-    # Parse tickers — requires TICKER.EXCHANGE format (e.g., AAPL.US)
+    # Parse tickers — accept both TICKER.EXCHANGE and bare tickers (auto-append US)
     raw_tickers = parse_comma_separated_preserve(tickers)
     ticker_exchange_pairs: list[tuple[str, str]] = []
     if raw_tickers:
-        try:
-            ticker_exchange_pairs = [parse_ticker_exchange(t) for t in raw_tickers]
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        for t in raw_tickers:
+            if "." in t:
+                try:
+                    ticker_exchange_pairs.append(parse_ticker_exchange(t))
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+            else:
+                ticker_exchange_pairs.append((t.upper(), "US"))
 
     cutoff = date.today() - timedelta(days=7)
 
@@ -588,12 +599,15 @@ async def get_latest_close_ohlcv(
 ):
     """
     Returns the latest OHLCV record for a single ticker.
-    Ticker format: TICKER.EXCHANGE (e.g., AAPL.US, BP.LSE, BTC-USD.CC). Required.
+    Ticker format: TICKER.EXCHANGE (e.g., AAPL.US, BP.LSE). Bare tickers (e.g., AAPL) default to US.
     """
-    try:
-        t, ex = parse_ticker_exchange(ticker)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    if "." in ticker:
+        try:
+            t, ex = parse_ticker_exchange(ticker)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    else:
+        t, ex = ticker.upper(), "US"
     query = select(OhlcvUnified).where(
         and_(
             OhlcvUnified.ticker == t,
@@ -663,12 +677,15 @@ async def get_ohlcv_stats(
 ):
     """
     Returns OHLCV statistics for a ticker.
-    Ticker format: TICKER.EXCHANGE (e.g., AAPL.US, BP.LSE). Required.
+    Ticker format: TICKER.EXCHANGE (e.g., AAPL.US, BP.LSE). Bare tickers (e.g., AAPL) default to US.
     """
-    try:
-        t, ex = parse_ticker_exchange(ticker)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    if "." in ticker:
+        try:
+            t, ex = parse_ticker_exchange(ticker)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    else:
+        t, ex = ticker.upper(), "US"
 
     stats_conditions = [OhlcvUnified.ticker == t, OhlcvUnified.exchange == ex]
     if start_date:
