@@ -613,23 +613,28 @@ async def get_latest_close_ohlcv(
 
 @app.get("/ohlcv/latest/", response_model=RealTimeOhlcvResponse)
 async def get_realtime_latest_ohlcv(
-    tickers: str = Query(..., description="Comma-separated tickers in TICKER.EXCHANGE format (e.g., AAPL.US,MSFT.US,BP.LSE). Required."),
+    tickers: str = Query(..., description="Comma-separated tickers in TICKER.EXCHANGE format (e.g., AAPL.US,MSFT.US,BP.LSE). Bare tickers (e.g., AAPL) default to US. Required."),
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key),
 ):
     """
     Returns real-time OHLCV data from EODHD for the specified tickers.
-    Ticker format: TICKER.EXCHANGE (e.g., AAPL.US, BP.LSE, BTCUSD.CC).
+    Ticker format: TICKER.EXCHANGE (e.g., AAPL.US, BP.LSE, BTCUSD.CC). Bare tickers (e.g., AAPL) default to US exchange.
     """
     raw_tickers = parse_comma_separated_preserve(tickers)
     if not raw_tickers:
         raise HTTPException(status_code=400, detail="tickers parameter is required")
 
-    # Parse TICKER.EXCHANGE pairs
-    try:
-        pairs = [parse_ticker_exchange(t) for t in raw_tickers]
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    # Parse tickers — accept both TICKER.EXCHANGE and bare tickers (auto-append US)
+    pairs = []
+    for t in raw_tickers:
+        if "." in t:
+            try:
+                pairs.append(parse_ticker_exchange(t))
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+        else:
+            pairs.append((t.upper(), "US"))
 
     # Validate tickers exist in assets table (by code)
     ticker_codes = [t for t, _ in pairs]
