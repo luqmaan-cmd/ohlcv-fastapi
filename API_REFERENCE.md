@@ -2,9 +2,16 @@
 
 Base URL: `https://ohlcv-api-832081557693.europe-west2.run.app`
 
-Authentication: All endpoints require `api_key` query parameter. 
+Authentication: All endpoints require an API key, supplied either as the `api_key` query parameter or the `X-API-Key` header. If both are sent, a match on either is accepted.
 
-API_KEY = 0637848019b44f86cce1692f14b3a837e4dd66d21c07baf3d052e4ffc6d02b25
+```
+API_KEY = $API_KEY
+```
+
+```bash
+curl -H "X-API-Key: $API_KEY" "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/latest_close/AAPL"
+curl "https://ohlcv-api-832081557693.europe-west2.run.app/ohlcv/latest_close/AAPL?api_key=$API_KEY"
+```
 
 ---
 

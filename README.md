@@ -369,7 +369,8 @@ The application reads configuration from GCP Secret Manager. The following secre
 | `db-user` | Database username |
 | `db-name` | Database name |
 | `db-password` | Database password |
-| `api-key` | API key for authentication |
+| `api-key` | Primary API key for authentication |
+| `api-keys` | Additional API keys, comma-separated `key[:label]` (optional) |
 | `eodhd-api-token` | EODHD API token for real-time OHLCV endpoints |
 
 ### Environment Variables (Local Development)
@@ -384,4 +385,6 @@ The application reads configuration from GCP Secret Manager. The following secre
 | DB_POOL_SIZE | Connection pool size | 10 |
 | DB_MAX_OVERFLOW | Max overflow connections | 5 |
 | DB_ECHO | SQL echo mode | false |
+| API_KEY | Primary API key | Required |
+| API_KEYS | Additional API keys, comma-separated `key[:label]` | (none) |
 | EODHD_API_TOKEN | EODHD API token for real-time OHLCV endpoints | Required |

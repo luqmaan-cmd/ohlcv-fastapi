@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException, Query, Security
-from fastapi.security import APIKeyQuery
+from fastapi.security import APIKeyHeader, APIKeyQuery
 from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
@@ -10,6 +10,7 @@ from decimal import Decimal
 from uuid import UUID
 from contextlib import asynccontextmanager
 import os
+import hmac
 import math
 import re
 import time
@@ -77,17 +78,68 @@ from schemas import (
 )
 
 API_KEY = os.getenv("API_KEY", "ohlcv-api-key-2024-secure")
+API_KEYS = os.getenv("API_KEYS", "")
 EODHD_API_TOKEN = os.getenv("EODHD_API_TOKEN", "")
 EODHD_BASE_URL = "https://eodhd.com/api/real-time"
 EODHD_TIMEOUT_S = 15
 
+
+def _parse_api_keys(raw: Optional[str]) -> tuple[tuple[str, str], ...]:
+    """Parse 'key[:label],key[:label]' into (label, key) pairs."""
+    pairs: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for segment in (raw or "").split(","):
+        segment = segment.strip()
+        if not segment:
+            continue
+        if ":" in segment:
+            key, label = segment.rsplit(":", 1)
+            key, label = key.strip(), label.strip()
+        else:
+            key, label = segment, "unnamed"
+        if not key:
+            continue
+        if label in seen:
+            raise ValueError(f"Duplicate API key label: {label}")
+        seen.add(label)
+        pairs.append((label, key))
+    return tuple(pairs)
+
+
+def _build_key_set(primary: Optional[str], extras: Optional[str]) -> tuple[tuple[str, str], ...]:
+    keys: list[tuple[str, str]] = []
+    if primary:
+        keys.append(("primary", primary))
+    keys.extend(_parse_api_keys(extras or ""))
+    return tuple(keys)
+
+
+def _match_api_key(candidate: Optional[str], key_set: tuple[tuple[str, str], ...]) -> Optional[str]:
+    """Return the label of the matching key, or None. Compares every key in constant time."""
+    if not candidate:
+        return None
+    matched: Optional[str] = None
+    for label, key in key_set:
+        if hmac.compare_digest(candidate, key) and matched is None:
+            matched = label
+    return matched
+
+
+_API_KEY_SET = _build_key_set(API_KEY, API_KEYS)
+
 api_key_query = APIKeyQuery(name="api_key", auto_error=False)
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-async def verify_api_key(api_key: str = Security(api_key_query)):
-    if api_key != API_KEY:
+async def verify_api_key(
+    api_key: Optional[str] = Security(api_key_query),
+    header_key: Optional[str] = Security(api_key_header),
+):
+    label = _match_api_key(header_key, _API_KEY_SET) or _match_api_key(api_key, _API_KEY_SET)
+    if label is None:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    return api_key
+    logger.info("api_key_label=%s", label)
+    return label
 
 logger = logging.getLogger("ohlcv-api")
 
