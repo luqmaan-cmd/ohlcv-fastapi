@@ -358,6 +358,23 @@ Dedicated endpoints for commodity OHLCV data (LGOc3, NICKEL, GDK…) with enrich
 ./deploy.sh
 ```
 
+### Deploy UAT
+
+`ohlcv-api-uat` is a separate Cloud Run service for validating new endpoints
+against the same database before promoting to production.
+
+```bash
+./deploy-uat.sh
+```
+
+UAT mirrors production sizing so results are comparable: `min-instances 1`,
+`max-instances 20`, `concurrency 100`, `2Gi` memory / `4` CPU, and the same DB
+pool (`DB_POOL_SIZE=3`, `DB_MAX_OVERFLOW=2`). It uses the same region, VPC
+connector, and secrets, so it reaches the same database. Both services run the
+same image; promotion is `./deploy.sh` with the validated image. After
+validation, set `--min-instances 0` or delete the service to stop paying for a
+warm instance.
+
 ### Secrets (GCP Secret Manager)
 
 The application reads configuration from GCP Secret Manager. The following secrets must exist:
