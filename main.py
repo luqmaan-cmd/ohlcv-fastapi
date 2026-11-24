@@ -402,7 +402,7 @@ async def get_ohlcv_data(
     close_max: Optional[Decimal] = Query(None),
     volume_min: Optional[int] = Query(None),
     volume_max: Optional[int] = Query(None),
-    sort_by: Optional[str] = Query("date", pattern="^(date|volume|close|open|high|low|notional_value)$"),
+    sort_by: Optional[str] = Query("date", pattern="^(date|volume|close|open|high|low)$"),
     sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
     realtime: bool = Query(False, description="Return real-time quotes from EODHD instead of stored rows (requires ticker or tickers)"),
     page: int = Query(1, ge=1),
@@ -544,10 +544,7 @@ async def get_ohlcv_data(
         query = query.where(OhlcvUnified.volume <= volume_max)
         count_query = count_query.where(OhlcvUnified.volume <= volume_max)
     
-    if sort_by == "notional_value":
-        sort_column = OhlcvUnified.close * OhlcvUnified.volume
-    else:
-        sort_column = getattr(OhlcvUnified, sort_by or "date")
+    sort_column = getattr(OhlcvUnified, sort_by or "date")
     query = query.order_by(sort_column.desc() if sort_order == "desc" else sort_column.asc())
     
     offset = (page - 1) * per_page
@@ -561,31 +558,7 @@ async def get_ohlcv_data(
         _set_cached_count(cache_key, total)
 
     result = await db.execute(query)
-    rows = result.scalars().all()
-
-    crypto_codes = [r.ticker for r in rows if r.exchange == "CC"]
-    crypto_meta: dict[str, tuple] = {}
-    if crypto_codes:
-        meta_result = await db.execute(
-            select(
-                CryptoAsset.code,
-                CryptoAsset.name,
-                CryptoAsset.base_currency,
-                CryptoAsset.quote_currency,
-            ).where(CryptoAsset.code.in_(crypto_codes))
-        )
-        for code, name, base_ccy, quote_ccy in meta_result.all():
-            crypto_meta[code] = (name, base_ccy, quote_ccy)
-
-    data = []
-    for row in rows:
-        item = OhlcvDataResponse.model_validate(row)
-        if item.close is not None and item.volume is not None:
-            item.notional_value = item.close * item.volume
-        meta = crypto_meta.get(item.ticker)
-        if meta:
-            item.name, item.base_currency, item.quote_currency = meta
-        data.append(item)
+    data = result.scalars().all()
 
     total_pages = math.ceil(total / per_page) if total > 0 else 1
     

@@ -49,10 +49,6 @@ class OhlcvDataResponse(OhlcvDataBase):
     id: Optional[UUID] = None
     exchange: Optional[str] = None
     asset_type: Optional[str] = None
-    name: Optional[str] = None
-    base_currency: Optional[str] = None
-    quote_currency: Optional[str] = None
-    notional_value: Optional[Decimal] = None
     timestamp: Optional[int] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
