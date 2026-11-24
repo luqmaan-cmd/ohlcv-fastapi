@@ -1,5 +1,8 @@
 venv/
 .venv/
+.ae3code/
+API_REFERENCE_LIVE.md
+migrations/
 __pycache__/
 *.py[cod]
 .git/

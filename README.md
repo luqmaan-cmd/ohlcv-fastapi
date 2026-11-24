@@ -375,6 +375,10 @@ same image; promotion is `./deploy.sh` with the validated image. After
 validation, set `--min-instances 0` or delete the service to stop paying for a
 warm instance.
 
+UAT mounts `api-keys-uat` instead of `api-keys`, so the UAT key is isolated in its
+own secret and can be rotated without touching production keys. `API_KEY` is still
+shared with production, so a production key also authenticates on UAT.
+
 ### Secrets (GCP Secret Manager)
 
 The application reads configuration from GCP Secret Manager. The following secrets must exist:
@@ -388,6 +392,7 @@ The application reads configuration from GCP Secret Manager. The following secre
 | `db-password` | Database password |
 | `api-key` | Primary API key for authentication |
 | `api-keys` | Additional API keys, comma-separated `key[:label]` (optional) |
+| `api-keys-uat` | API keys mounted only by `ohlcv-api-uat` (the `uat`-labelled key) |
 | `eodhd-api-token` | EODHD API token for real-time OHLCV endpoints |
 
 ### Environment Variables (Local Development)
