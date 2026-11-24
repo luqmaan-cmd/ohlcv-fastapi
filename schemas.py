@@ -57,8 +57,16 @@ class OhlcvDataResponse(OhlcvDataBase):
         from_attributes = True
 
 
+class UnifiedOhlcvResponse(OhlcvDataBase):
+    exchange: Optional[str] = None
+    asset_type: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class PaginatedResponse(BaseModel):
-    data: List[OhlcvDataResponse]
+    data: List[UnifiedOhlcvResponse]
     total: int
     page: int
     per_page: int

@@ -33,7 +33,7 @@ from models import (
     OhlcvUnified,
 )
 from schemas import (
-    OhlcvDataCreate, OhlcvDataUpdate, OhlcvDataResponse,
+    OhlcvDataCreate, OhlcvDataUpdate, OhlcvDataResponse, UnifiedOhlcvResponse,
     OhlcvDataBulkCreate, PaginatedResponse, OhlcvStatsResponse,
     BatchLatestResponse, BulkInsertResponse,
     SP500ConstituentResponse, SP500ListResponse,
@@ -445,8 +445,7 @@ async def get_ohlcv_data(
             )
         quotes = await fetch_eodhd_realtime_batch(ticker_exchange_pairs)
         items = [
-            OhlcvDataResponse(
-                id=None,
+            UnifiedOhlcvResponse(
                 ticker=q.ticker,
                 date=(q.datetime.date() if q.datetime else date.today()),
                 open=q.open,
@@ -456,7 +455,6 @@ async def get_ohlcv_data(
                 adjusted_close=q.adjusted_close,
                 volume=q.volume,
                 exchange=q.exchange,
-                timestamp=q.timestamp,
             )
             for q in quotes
         ]
