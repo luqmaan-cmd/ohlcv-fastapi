@@ -156,13 +156,15 @@ against the same database before promoting to production.
 ./deploy-uat.sh
 ```
 
-UAT mirrors production sizing so results are comparable: `min-instances 1`,
+UAT uses the same per-instance sizing as production so results are comparable:
 `max-instances 20`, `concurrency 100`, `2Gi` memory / `4` CPU, and the same DB
 pool (`DB_POOL_SIZE=3`, `DB_MAX_OVERFLOW=2`). It uses the same region, VPC
 connector, and secrets, so it reaches the same database. Both services run the
-same image; promotion is `./deploy.sh` with the validated image. After
-validation, set `--min-instances 0` or delete the service to stop paying for a
-warm instance.
+same image; promotion is `./deploy.sh` with the validated image.
+
+Unlike production, UAT runs `--min-instances 0`, so it scales to zero when idle
+and costs nothing between uses. The trade-off is a cold start on the first
+request after an idle period.
 
 UAT mounts `api-keys-uat` instead of `api-keys`, so the UAT key is isolated in its
 own secret and can be rotated without touching production keys. `API_KEY` is still

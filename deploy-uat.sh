@@ -18,7 +18,7 @@ gcloud run deploy $SERVICE_NAME \
   --set-secrets="DB_HOST=db-host:latest,DB_USER=db-user:latest,DB_PASSWORD=db-password:latest,DB_NAME=db-name:latest,DB_PORT=db-port:latest,API_KEY=api-key:latest,API_KEYS=api-keys-uat:latest,EODHD_API_TOKEN=eodhd-api-token:latest" \
   --allow-unauthenticated \
   --port 8080 \
-  --min-instances 1 \
+  --min-instances 0 \
   --max-instances 20 \
   --concurrency 100 \
   --memory 2Gi \
