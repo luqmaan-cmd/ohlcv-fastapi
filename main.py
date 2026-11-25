@@ -64,6 +64,7 @@ from schemas import (
     UstRealYieldLatestItem, UstRealYieldLatestResponse,
     UstYieldRateResponse, UstYieldPaginatedResponse,
     UstYieldLatestItem, UstYieldLatestResponse,
+    UstRateItem, UstPaginatedResponse,
     CryptoOhlcvResponse, CryptoPaginatedResponse,
     CryptoLatestItem, CryptoLatestResponse,
     CryptoHistoryItem, CryptoHistoryPaginatedResponse,
@@ -82,6 +83,7 @@ API_KEYS = os.getenv("API_KEYS", "")
 EODHD_API_TOKEN = os.getenv("EODHD_API_TOKEN", "")
 EODHD_BASE_URL = "https://eodhd.com/api/real-time"
 EODHD_TIMEOUT_S = 15
+COMMODITY_EXCHANGE = "COMM"
 
 
 def _parse_api_keys(raw: Optional[str]) -> tuple[tuple[str, str], ...]:
@@ -223,6 +225,36 @@ def parse_eodhd_response(data: dict, ticker: str, exchange: str) -> RealTimeOhlc
     )
 
 
+async def fetch_eodhd_realtime_multi(symbols: list[str]) -> dict[str, dict]:
+    """Fetch live quotes for several fully-qualified EODHD symbols in one request.
+
+    Returns a mapping of uppercased EODHD code -> raw payload. Symbols the
+    provider has no live data for are still present, with "NA" placeholders.
+    """
+    if not symbols:
+        return {}
+    url = f"{EODHD_BASE_URL}/{','.join(symbols)}"
+    params = {"api_token": EODHD_API_TOKEN, "fmt": "json"}
+    try:
+        async with httpx.AsyncClient(timeout=EODHD_TIMEOUT_S) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="EODHD request timed out")
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=502, detail=f"EODHD returned {exc.response.status_code}")
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"EODHD request failed: {exc}")
+
+    rows = data if isinstance(data, list) else [data]
+    return {
+        str(row.get("code", "")).upper(): row
+        for row in rows
+        if isinstance(row, dict)
+    }
+
+
 async def fetch_eodhd_realtime_batch(
     ticker_exchange_pairs: list[tuple[str, str]],
 ) -> list[RealTimeOhlcvItem]:
@@ -361,6 +393,38 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="OHLCV Data API", version="1.0.0", lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+_IS_UAT = os.getenv("APP_ENV", "").lower() == "uat"
+
+
+def _uat_only(path: str, **kwargs):
+    """Register a route only on the UAT service (APP_ENV=uat)."""
+    def decorator(func):
+        if _IS_UAT:
+            app.add_api_route(path, func, **kwargs)
+        return func
+    return decorator
+
+
+def _prod_only(path: str, **kwargs):
+    """Register a route everywhere except the UAT service."""
+    def decorator(func):
+        if not _IS_UAT:
+            app.add_api_route(path, func, **kwargs)
+        return func
+    return decorator
+
+
+_RETIRED_ENABLED = os.getenv("ENABLE_RETIRED_ROUTES", "") == "1"
+
+
+def _retired(path: str, **kwargs):
+    """Register a retired route only when ENABLE_RETIRED_ROUTES=1."""
+    def decorator(func):
+        if _RETIRED_ENABLED:
+            app.add_api_route(path, func, **kwargs)
+        return func
+    return decorator
+
 
 def parse_comma_separated(value: Optional[str]) -> Optional[List[str]]:
     if not value:
@@ -386,12 +450,10 @@ def parse_ticker_exchange(ticker_input: str) -> tuple[str, str]:
 
 @app.get("/ohlcv/", response_model=PaginatedResponse)
 async def get_ohlcv_data(
-    ticker: Optional[str] = Query(None, description="Single ticker (e.g., AAPL.US or AAPL)"),
-    tickers: Optional[str] = Query(None, description="Comma-separated tickers (e.g., AAPL.US,MSFT.US,BP.LSE or AAPL,MSFT). Bare tickers default to US."),
+    ticker: Optional[str] = Query(None, description="Single ticker with exchange suffix (e.g., AAPL.US)"),
+    tickers: Optional[str] = Query(None, description="Comma-separated tickers with exchange suffix (e.g., AAPL.US,MSFT.US,BP.LSE)"),
     exchange: Optional[str] = Query(None, description="Filter by exchange (e.g., US, LSE, CC). Used when no tickers specified."),
     asset_type: Optional[str] = Query(None, description="Filter by asset type (e.g., ETF, INDEX, FOREX, Cryptocurrencies, Government Bonds)"),
-    asset_isin: Optional[str] = Query(None),
-    asset_isins: Optional[str] = Query(None, description="Comma-separated ISINs"),
     start_date: Optional[date] = Query(None, description="Inclusive start date. To get the latest close for an asset, set start_date and end_date to the most recent trading day for that exchange."),
     end_date: Optional[date] = Query(None, description="Inclusive end date. A ticker absent from the latest trading day is no longer trading."),
     year: Optional[int] = Query(None, ge=1900, le=2100, description="Year for partition pruning (optional)"),
@@ -414,7 +476,7 @@ async def get_ohlcv_data(
     List paginated OHLCV data for any asset class from the unified table.
 
     Tickers are addressed as TICKER.EXCHANGE (e.g. AAPL.US, BP.LSE, BTC-USD.CC).
-    Bare tickers default to exchange US. Use `exchange` (and optionally
+    The exchange suffix is required. Use `exchange` (and optionally
     `asset_type`) to query a venue instead of naming tickers.
 
     To get the latest close, filter to the most recent trading day for that
@@ -427,15 +489,10 @@ async def get_ohlcv_data(
     ticker_exchange_pairs: list[tuple[str, str]] = []
     if raw_tickers:
         for t in raw_tickers:
-            if "." in t:
-                try:
-                    ticker_exchange_pairs.append(parse_ticker_exchange(t))
-                except ValueError as e:
-                    raise HTTPException(status_code=400, detail=str(e))
-            else:
-                ticker_exchange_pairs.append((t.upper(), "US"))
-
-    isin_list = parse_comma_separated(asset_isins) or ([asset_isin.upper()] if asset_isin else None)
+            try:
+                ticker_exchange_pairs.append(parse_ticker_exchange(t))
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
 
     if realtime:
         if not ticker_exchange_pairs:
@@ -495,14 +552,6 @@ async def get_ohlcv_data(
         query = query.where(OhlcvUnified.asset_type == asset_type)
         count_query = count_query.where(OhlcvUnified.asset_type == asset_type)
     
-    if isin_list:
-        if len(isin_list) == 1:
-            query = query.where(OhlcvUnified.instrument_id == isin_list[0])
-            count_query = count_query.where(OhlcvUnified.instrument_id == isin_list[0])
-        else:
-            query = query.where(OhlcvUnified.instrument_id.in_(isin_list))
-            count_query = count_query.where(OhlcvUnified.instrument_id.in_(isin_list))
-    
     if year:
         year_start = date(year, 1, 1)
         year_end = date(year, 12, 31)
@@ -548,7 +597,7 @@ async def get_ohlcv_data(
     offset = (page - 1) * per_page
     query = query.offset(offset).limit(per_page)
 
-    cache_key = f"ohlcv|pairs={ticker_exchange_pairs}|exchange={exchange}|asset_type={asset_type}|isins={isin_list}|year={year}|month={month}|start={start_date}|end={end_date}|omin={open_min}|omax={open_max}|cmin={close_min}|cmax={close_max}|vmin={volume_min}|vmax={volume_max}"
+    cache_key = f"ohlcv|pairs={ticker_exchange_pairs}|exchange={exchange}|asset_type={asset_type}|year={year}|month={month}|start={start_date}|end={end_date}|omin={open_min}|omax={open_max}|cmin={close_min}|cmax={close_max}|vmin={volume_min}|vmax={volume_max}"
     total = _get_cached_count(cache_key)
     if total is None:
         total_result = await db.execute(count_query)
@@ -571,9 +620,9 @@ async def get_ohlcv_data(
     )
 
 
-@app.get("/ohlcv/latest_close/", response_model=BatchLatestResponse)
+@_retired("/ohlcv/latest_close/", methods=["GET"], response_model=BatchLatestResponse)
 async def get_batch_latest_close_ohlcv(
-    tickers: Optional[str] = Query(None, description="Comma-separated tickers (e.g., AAPL.US,MSFT.US or AAPL,MSFT). Bare tickers default to US. If omitted, returns latest for all tickers."),
+    tickers: Optional[str] = Query(None, description="Comma-separated tickers with exchange suffix (e.g., AAPL.US,MSFT.US). If omitted, returns latest for all tickers."),
     exchange: Optional[str] = Query(None, description="Filter by exchange (e.g., US, LSE, CC). Used when no specific tickers are given."),
     asset_type: Optional[str] = Query(None, description="Filter by asset type (e.g., ETF, INDEX, FOREX, Cryptocurrencies, Government Bonds)"),
     sort_by: Optional[str] = Query(None, pattern="^(ticker|volume|close|open|high|low)$"),
@@ -586,13 +635,10 @@ async def get_batch_latest_close_ohlcv(
     ticker_exchange_pairs: list[tuple[str, str]] = []
     if raw_tickers:
         for t in raw_tickers:
-            if "." in t:
-                try:
-                    ticker_exchange_pairs.append(parse_ticker_exchange(t))
-                except ValueError as e:
-                    raise HTTPException(status_code=400, detail=str(e))
-            else:
-                ticker_exchange_pairs.append((t.upper(), "US"))
+            try:
+                ticker_exchange_pairs.append(parse_ticker_exchange(t))
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
 
     cutoff = date.today() - timedelta(days=7)
 
@@ -687,7 +733,7 @@ async def get_batch_latest_close_ohlcv(
     )
 
 
-@app.get("/ohlcv/latest_close/{ticker}", response_model=OhlcvDataResponse)
+@_retired("/ohlcv/latest_close/{ticker}", methods=["GET"], response_model=OhlcvDataResponse)
 async def get_latest_close_ohlcv(
     ticker: str,
     db: AsyncSession = Depends(get_db),
@@ -695,15 +741,12 @@ async def get_latest_close_ohlcv(
 ):
     """
     Returns the latest OHLCV record for a single ticker.
-    Ticker format: TICKER.EXCHANGE (e.g., AAPL.US, BP.LSE). Bare tickers (e.g., AAPL) default to US.
+    Ticker format: TICKER.EXCHANGE (e.g., AAPL.US, BP.LSE). The exchange suffix is required.
     """
-    if "." in ticker:
-        try:
-            t, ex = parse_ticker_exchange(ticker)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-    else:
-        t, ex = ticker.upper(), "US"
+    try:
+        t, ex = parse_ticker_exchange(ticker)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     query = select(OhlcvUnified).where(
         and_(
             OhlcvUnified.ticker == t,
@@ -723,47 +766,51 @@ async def get_latest_close_ohlcv(
 
 @app.get("/ohlcv/latest/", response_model=RealTimeOhlcvResponse)
 async def get_realtime_latest_ohlcv(
-    tickers: str = Query(..., description="Comma-separated tickers in TICKER.EXCHANGE format (e.g., AAPL.US,MSFT.US,BP.LSE). Bare tickers (e.g., AAPL) default to US. Required."),
+    tickers: str = Query(..., description="Comma-separated tickers in TICKER.EXCHANGE format (e.g., AAPL.US,MSFT.US,BP.LSE). The exchange suffix is required."),
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key),
 ):
     """
     Returns real-time OHLCV data from EODHD for the specified tickers.
-    Ticker format: TICKER.EXCHANGE (e.g., AAPL.US, BP.LSE, BTCUSD.CC). Bare tickers (e.g., AAPL) default to US exchange.
+    Ticker format: TICKER.EXCHANGE (e.g., AAPL.US, BP.LSE, BTC-USD.CC). The exchange suffix is required.
+    Unknown tickers are reported in `missing` and do not fail the request; a
+    ticker with no live quote comes back with null prices.
     """
     raw_tickers = parse_comma_separated_preserve(tickers)
     if not raw_tickers:
         raise HTTPException(status_code=400, detail="tickers parameter is required")
 
-    # Parse tickers — accept both TICKER.EXCHANGE and bare tickers (auto-append US)
     pairs = []
     for t in raw_tickers:
-        if "." in t:
-            try:
-                pairs.append(parse_ticker_exchange(t))
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e))
-        else:
-            pairs.append((t.upper(), "US"))
+        try:
+            pairs.append(parse_ticker_exchange(t))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
-    # Validate tickers exist in assets table (by code)
     ticker_codes = [t for t, _ in pairs]
     asset_query = select(Asset.code).where(Asset.code.in_(ticker_codes))
     result = await db.execute(asset_query)
     found_codes = {row[0] for row in result.all()}
 
-    missing = [t for t in ticker_codes if t not in found_codes]
-    if missing:
+    resolvable = [(t, e) for t, e in pairs if t in found_codes]
+    missing = [f"{t}.{e}" for t, e in pairs if t not in found_codes]
+
+    if not resolvable:
         raise HTTPException(
             status_code=404,
             detail=f"No asset found with tickers: {', '.join(missing)}",
         )
 
-    items = await fetch_eodhd_realtime_batch(pairs)
-    return RealTimeOhlcvResponse(data=items, count=len(items))
+    quotes = await fetch_eodhd_realtime_multi([f"{t}.{e}" for t, e in resolvable])
+    items = [
+        parse_eodhd_response(quotes.get(f"{t}.{e}".upper(), {}), t, e)
+        for t, e in resolvable
+    ]
+
+    return RealTimeOhlcvResponse(data=items, count=len(items), missing=missing)
 
 
-@app.get("/ohlcv/stats/{ticker}", response_model=OhlcvStatsResponse)
+@_retired("/ohlcv/stats/{ticker}", methods=["GET"], response_model=OhlcvStatsResponse)
 async def get_ohlcv_stats(
     ticker: str,
     start_date: Optional[date] = Query(None, description="Start date for stats (enables partition pruning)"),
@@ -773,15 +820,12 @@ async def get_ohlcv_stats(
 ):
     """
     Returns OHLCV statistics for a ticker.
-    Ticker format: TICKER.EXCHANGE (e.g., AAPL.US, BP.LSE). Bare tickers (e.g., AAPL) default to US.
+    Ticker format: TICKER.EXCHANGE (e.g., AAPL.US, BP.LSE). The exchange suffix is required.
     """
-    if "." in ticker:
-        try:
-            t, ex = parse_ticker_exchange(ticker)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-    else:
-        t, ex = ticker.upper(), "US"
+    try:
+        t, ex = parse_ticker_exchange(ticker)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     stats_conditions = [OhlcvUnified.ticker == t, OhlcvUnified.exchange == ex]
     if start_date:
@@ -836,7 +880,7 @@ async def get_ohlcv_stats(
     )
 
 
-@app.get("/tickers/", response_model=List[str])
+@_retired("/tickers/", methods=["GET"], response_model=List[str])
 async def get_all_tickers(db: AsyncSession = Depends(get_db), api_key: str = Depends(verify_api_key)):
     # Uses the tickers lookup table (kept in sync via trigger) instead of
     # SELECT DISTINCT on ohlcv_data (43M rows) — ~5ms vs ~8.6s.
@@ -845,7 +889,7 @@ async def get_all_tickers(db: AsyncSession = Depends(get_db), api_key: str = Dep
     return [row[0] for row in result.all()]
 
 
-@app.get("/assets/{ticker}", response_model=AssetLookupResponse)
+@_retired("/assets/{ticker}", methods=["GET"], response_model=AssetLookupResponse)
 async def lookup_asset(
     ticker: str,
     exchange: Optional[str] = Query(None, description="Filter by exchange (e.g., NASDAQ, LSE, CC)"),
@@ -971,7 +1015,7 @@ async def lookup_asset(
     return AssetLookupResponse(data=items, count=len(items))
 
 
-@app.get("/ohlcv/{ohlcv_id}", response_model=OhlcvDataResponse)
+@_retired("/ohlcv/{ohlcv_id}", methods=["GET"], response_model=OhlcvDataResponse)
 async def get_ohlcv_by_id(ohlcv_id: str, db: AsyncSession = Depends(get_db), api_key: str = Depends(verify_api_key)):
     query = select(OhlcvUnified).where(OhlcvUnified.id == ohlcv_id)
     result = await db.execute(query)
@@ -1025,7 +1069,7 @@ async def bulk_create_ohlcv_data(
     return BulkInsertResponse(inserted=inserted, failed=failed, errors=errors)
 
 
-@app.put("/ohlcv/{ohlcv_id}", response_model=OhlcvDataResponse)
+@_retired("/ohlcv/{ohlcv_id}", methods=["PUT"], response_model=OhlcvDataResponse)
 async def update_ohlcv_data(
     ohlcv_id: str,
     ohlcv: OhlcvDataUpdate,
@@ -1053,7 +1097,7 @@ async def update_ohlcv_data(
     return db_ohlcv
 
 
-@app.delete("/ohlcv/{ohlcv_id}", status_code=204)
+@_retired("/ohlcv/{ohlcv_id}", methods=["DELETE"], status_code=204)
 async def delete_ohlcv_data(ohlcv_id: str, db: AsyncSession = Depends(get_db), api_key: str = Depends(verify_api_key)):
     query = select(OhlcvUnified).where(OhlcvUnified.id == ohlcv_id)
     result = await db.execute(query)
@@ -1069,7 +1113,7 @@ async def delete_ohlcv_data(ohlcv_id: str, db: AsyncSession = Depends(get_db), a
 
 # ── S&P 500 Endpoints ────────────────────────────────────────────────────────
 
-@app.get("/sp500/", response_model=SP500ListResponse)
+@_retired("/sp500/", methods=["GET"], response_model=SP500ListResponse)
 async def list_sp500_constituents(
     sector: Optional[str] = Query(None, description="Filter by GIC sector (e.g., Information Technology)"),
     is_active: Optional[bool] = Query(None, description="Filter by active status"),
@@ -1156,7 +1200,7 @@ async def list_sp500_constituents(
     )
 
 
-@app.get("/sp500/latest/", response_model=SP500LatestResponse)
+@_retired("/sp500/latest/", methods=["GET"], response_model=SP500LatestResponse)
 async def get_sp500_latest(
     tickers: Optional[str] = Query(None, description="Comma-separated S&P 500 tickers (e.g., AAPL,MSFT,GOOGL). If omitted, returns latest for all constituents."),
     db: AsyncSession = Depends(get_db),
@@ -1247,7 +1291,7 @@ async def get_sp500_latest(
     return SP500LatestResponse(data=items, count=len(items))
 
 
-@app.get("/sp500/history/", response_model=SP500HistoryResponse)
+@_retired("/sp500/history/", methods=["GET"], response_model=SP500HistoryResponse)
 async def get_sp500_batch_history(
     tickers: Optional[str] = Query(None, description="Comma-separated S&P 500 tickers (e.g., AAPL,MSFT,GOOGL). If omitted, returns history for all active constituents."),
     start_date: Optional[date] = Query(None),
@@ -1484,7 +1528,7 @@ async def get_sp500_batch_history(
 
 # ── Ticker Alias Endpoints ───────────────────────────────────────────────────
 
-@app.get("/aliases/", response_model=TickerAliasListResponse)
+@_retired("/aliases/", methods=["GET"], response_model=TickerAliasListResponse)
 async def list_ticker_aliases(
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key)
@@ -1504,7 +1548,7 @@ async def list_ticker_aliases(
     return TickerAliasListResponse(data=aliases, total=total)  # type: ignore[arg-type]
 
 
-@app.get("/aliases/{sp500_ticker}", response_model=TickerAliasResponse)
+@_retired("/aliases/{sp500_ticker}", methods=["GET"], response_model=TickerAliasResponse)
 async def get_ticker_alias(
     sp500_ticker: str,
     db: AsyncSession = Depends(get_db),
@@ -1521,7 +1565,7 @@ async def get_ticker_alias(
     return alias
 
 
-@app.post("/aliases/", response_model=TickerAliasResponse, status_code=201)
+@_retired("/aliases/", methods=["POST"], response_model=TickerAliasResponse, status_code=201)
 async def create_ticker_alias(
     alias: TickerAliasCreate,
     db: AsyncSession = Depends(get_db),
@@ -1539,7 +1583,7 @@ async def create_ticker_alias(
     return db_alias
 
 
-@app.put("/aliases/{sp500_ticker}", response_model=TickerAliasResponse)
+@_retired("/aliases/{sp500_ticker}", methods=["PUT"], response_model=TickerAliasResponse)
 async def update_ticker_alias(
     sp500_ticker: str,
     alias: TickerAliasUpdate,
@@ -1564,7 +1608,7 @@ async def update_ticker_alias(
     return db_alias
 
 
-@app.delete("/aliases/{sp500_ticker}", status_code=204)
+@_retired("/aliases/{sp500_ticker}", methods=["DELETE"], status_code=204)
 async def delete_ticker_alias(
     sp500_ticker: str,
     db: AsyncSession = Depends(get_db),
@@ -1697,7 +1741,7 @@ async def _get_etf_index_ohlcv(
     )
 
 
-@app.get("/etf/", response_model=EtfIndexPaginatedResponse)
+@_retired("/etf/", methods=["GET"], response_model=EtfIndexPaginatedResponse)
 async def get_etf_ohlcv_data(
     ticker: Optional[str] = Query(None, description="Single ETF ticker (e.g., SPY)"),
     tickers: Optional[str] = Query(None, description="Comma-separated ETF tickers (e.g., SPY,QQQ,IWM)"),
@@ -1733,7 +1777,7 @@ async def get_etf_ohlcv_data(
     )
 
 
-@app.get("/index/", response_model=EtfIndexPaginatedResponse)
+@_retired("/index/", methods=["GET"], response_model=EtfIndexPaginatedResponse)
 async def get_index_ohlcv_data(
     ticker: Optional[str] = Query(None, description="Single index ticker (e.g., GSPC)"),
     tickers: Optional[str] = Query(None, description="Comma-separated index tickers (e.g., GSPC,DJI,IXIC)"),
@@ -1842,7 +1886,7 @@ async def _get_etf_index_latest_batch(
     return EtfIndexLatestResponse(data=items, count=len(items))
 
 
-@app.get("/etf/latest_close/", response_model=EtfIndexLatestResponse)
+@_retired("/etf/latest_close/", methods=["GET"], response_model=EtfIndexLatestResponse)
 async def get_etf_latest_close_batch(
     tickers: Optional[str] = Query(None, description="Comma-separated ETF tickers (e.g., SPY,QQQ,IWM). If omitted, returns latest for all ETFs."),
     db: AsyncSession = Depends(get_db),
@@ -1856,7 +1900,7 @@ async def get_etf_latest_close_batch(
     return await _get_etf_index_latest_batch(asset_type="etf", tickers=tickers, db=db)
 
 
-@app.get("/etf/latest_close/{ticker}", response_model=EtfIndexLatestItem)
+@_retired("/etf/latest_close/{ticker}", methods=["GET"], response_model=EtfIndexLatestItem)
 async def get_etf_latest_close_single(
     ticker: str,
     db: AsyncSession = Depends(get_db),
@@ -1908,7 +1952,7 @@ async def get_etf_latest_close_single(
     )
 
 
-@app.get("/etf/latest/", response_model=RealTimeOhlcvResponse)
+@_retired("/etf/latest/", methods=["GET"], response_model=RealTimeOhlcvResponse)
 async def get_etf_realtime_latest_batch(
     tickers: str = Query(..., description="Comma-separated ETF tickers (e.g., SPY,QQQ,IWM). Required."),
     db: AsyncSession = Depends(get_db),
@@ -1942,7 +1986,7 @@ async def get_etf_realtime_latest_batch(
 
 
 
-@app.get("/index/latest_close/", response_model=EtfIndexLatestResponse)
+@_retired("/index/latest_close/", methods=["GET"], response_model=EtfIndexLatestResponse)
 async def get_index_latest_close_batch(
     tickers: Optional[str] = Query(None, description="Comma-separated index tickers (e.g., GSPC,DJI,IXIC). If omitted, returns latest for all indices."),
     db: AsyncSession = Depends(get_db),
@@ -1956,7 +2000,7 @@ async def get_index_latest_close_batch(
     return await _get_etf_index_latest_batch(asset_type="index", tickers=tickers, db=db)
 
 
-@app.get("/index/latest_close/{ticker}", response_model=EtfIndexLatestItem)
+@_retired("/index/latest_close/{ticker}", methods=["GET"], response_model=EtfIndexLatestItem)
 async def get_index_latest_close_single(
     ticker: str,
     db: AsyncSession = Depends(get_db),
@@ -2008,7 +2052,7 @@ async def get_index_latest_close_single(
     )
 
 
-@app.get("/index/latest/", response_model=RealTimeOhlcvResponse)
+@_retired("/index/latest/", methods=["GET"], response_model=RealTimeOhlcvResponse)
 async def get_index_realtime_latest_batch(
     tickers: str = Query(..., description="Comma-separated index tickers (e.g., GSPC,DJI,IXIC). Required."),
     db: AsyncSession = Depends(get_db),
@@ -2044,7 +2088,7 @@ async def get_index_realtime_latest_batch(
 
 # ── Government Bond Endpoints ────────────────────────────────────────────────
 
-@app.get("/gov-bond/", response_model=GovBondPaginatedResponse)
+@_retired("/gov-bond/", methods=["GET"], response_model=GovBondPaginatedResponse)
 async def get_gov_bond_ohlcv_data(
     ticker: Optional[str] = Query(None, description="Single government bond ticker (e.g., UK10Y)"),
     tickers: Optional[str] = Query(None, description="Comma-separated government bond tickers (e.g., UK10Y,US10Y,DE10Y)"),
@@ -2169,7 +2213,7 @@ async def get_gov_bond_ohlcv_data(
     )
 
 
-@app.get("/gov-bond/latest_close/", response_model=GovBondLatestResponse)
+@_retired("/gov-bond/latest_close/", methods=["GET"], response_model=GovBondLatestResponse)
 async def get_gov_bond_latest_close_batch(
     tickers: Optional[str] = Query(None, description="Comma-separated government bond tickers (e.g., UK10Y,US10Y,DE10Y). If omitted, returns latest for all government bonds."),
     country: Optional[str] = Query(None, description="Filter by single country code (e.g., US, DE, JP)"),
@@ -2254,7 +2298,7 @@ async def get_gov_bond_latest_close_batch(
     return GovBondLatestResponse(data=items, count=len(items))
 
 
-@app.get("/gov-bond/latest_close/{ticker}", response_model=GovBondLatestItem)
+@_retired("/gov-bond/latest_close/{ticker}", methods=["GET"], response_model=GovBondLatestItem)
 async def get_gov_bond_latest_close_single(
     ticker: str,
     db: AsyncSession = Depends(get_db),
@@ -2305,7 +2349,7 @@ async def get_gov_bond_latest_close_single(
     )
 
 
-@app.get("/gov-bond/latest/", response_model=RealTimeOhlcvResponse)
+@_retired("/gov-bond/latest/", methods=["GET"], response_model=RealTimeOhlcvResponse)
 async def get_gov_bond_realtime_latest_batch(
     tickers: str = Query(..., description="Comma-separated government bond tickers (e.g., UK10Y,US10Y,DE10Y). Required."),
     db: AsyncSession = Depends(get_db),
@@ -2340,7 +2384,7 @@ async def get_gov_bond_realtime_latest_batch(
 
 # ── Foreign Exchange (FX) Endpoints ──────────────────────────────────────────
 
-@app.get("/fx/", response_model=FxPaginatedResponse)
+@_retired("/fx/", methods=["GET"], response_model=FxPaginatedResponse)
 async def get_fx_ohlcv_data(
     ticker: Optional[str] = Query(None, description="Single FX ticker (e.g., EURUSD)"),
     tickers: Optional[str] = Query(None, description="Comma-separated FX tickers (e.g., EURUSD,GBPUSD,USDJPY)"),
@@ -2464,7 +2508,7 @@ async def get_fx_ohlcv_data(
     )
 
 
-@app.get("/fx/latest_close/", response_model=FxLatestResponse)
+@_retired("/fx/latest_close/", methods=["GET"], response_model=FxLatestResponse)
 async def get_fx_latest_close_batch(
     tickers: Optional[str] = Query(None, description="Comma-separated FX tickers (e.g., EURUSD,GBPUSD,USDJPY). If omitted, returns latest for all FX pairs."),
     base_currency: Optional[str] = Query(None, description="Filter by base currency code (e.g., EUR, GBP)"),
@@ -2554,7 +2598,7 @@ async def get_fx_latest_close_batch(
     return FxLatestResponse(data=items, count=len(items))
 
 
-@app.get("/fx/latest_close/{ticker}", response_model=FxLatestItem)
+@_retired("/fx/latest_close/{ticker}", methods=["GET"], response_model=FxLatestItem)
 async def get_fx_latest_close_single(
     ticker: str,
     db: AsyncSession = Depends(get_db),
@@ -2607,7 +2651,7 @@ async def get_fx_latest_close_single(
     )
 
 
-@app.get("/fx/latest/", response_model=RealTimeOhlcvResponse)
+@_retired("/fx/latest/", methods=["GET"], response_model=RealTimeOhlcvResponse)
 async def get_fx_realtime_latest_batch(
     tickers: str = Query(..., description="Comma-separated FX tickers (e.g., EURUSD,GBPUSD,USDJPY). Required."),
     db: AsyncSession = Depends(get_db),
@@ -2639,7 +2683,7 @@ async def get_fx_realtime_latest_batch(
 
 
 
-@app.get("/fx/assets/", response_model=FxAssetResponse)
+@_retired("/fx/assets/", methods=["GET"], response_model=FxAssetResponse)
 async def get_fx_assets(
     base_currency: Optional[str] = Query(None, description="Filter by base currency (e.g., EUR, GBP)"),
     quote_currency: Optional[str] = Query(None, description="Filter by quote currency (e.g., USD, JPY)"),
@@ -2718,7 +2762,7 @@ async def get_fx_assets(
 
 # ── Crypto Endpoints ─────────────────────────────────────────────────────────
 
-@app.get("/crypto/", response_model=CryptoPaginatedResponse)
+@_retired("/crypto/", methods=["GET"], response_model=CryptoPaginatedResponse)
 async def get_crypto_ohlcv_data(
     ticker: Optional[str] = Query(None, description="Single crypto ticker (e.g., BTC-USD)"),
     tickers: Optional[str] = Query(None, description="Comma-separated crypto tickers (e.g., BTC-USD,ETH-USD,SOL-USD)"),
@@ -2839,7 +2883,7 @@ async def get_crypto_ohlcv_data(
     )
 
 
-@app.get("/crypto/latest_close/", response_model=CryptoLatestResponse)
+@_retired("/crypto/latest_close/", methods=["GET"], response_model=CryptoLatestResponse)
 async def get_crypto_latest_close_batch(
     tickers: Optional[str] = Query(None, description="Comma-separated crypto tickers (e.g., BTC-USD,ETH-USD,SOL-USD). If omitted, returns latest for all crypto assets."),
     base_currency: Optional[str] = Query(None, description="Filter by base currency code (e.g., BTC, ETH)"),
@@ -2926,7 +2970,7 @@ async def get_crypto_latest_close_batch(
     return CryptoLatestResponse(data=items, count=len(items))
 
 
-@app.get("/crypto/latest_close/{ticker}", response_model=CryptoLatestItem)
+@_retired("/crypto/latest_close/{ticker}", methods=["GET"], response_model=CryptoLatestItem)
 async def get_crypto_latest_close_single(
     ticker: str,
     db: AsyncSession = Depends(get_db),
@@ -2975,7 +3019,7 @@ async def get_crypto_latest_close_single(
     )
 
 
-@app.get("/crypto/latest/", response_model=RealTimeOhlcvResponse)
+@_retired("/crypto/latest/", methods=["GET"], response_model=RealTimeOhlcvResponse)
 async def get_crypto_realtime_latest_batch(
     tickers: str = Query(..., description="Comma-separated crypto tickers (e.g., BTC-USD,ETH-USD,SOL-USD). Required."),
     db: AsyncSession = Depends(get_db),
@@ -3008,7 +3052,7 @@ async def get_crypto_realtime_latest_batch(
 
 
 
-@app.get("/crypto/history/", response_model=CryptoHistoryPaginatedResponse)
+@_retired("/crypto/history/", methods=["GET"], response_model=CryptoHistoryPaginatedResponse)
 async def get_crypto_history(
     tickers: Optional[str] = Query(None, description="Comma-separated crypto tickers (e.g., BTC-USD,ETH-USD). If omitted, returns history for all crypto assets."),
     base_currency: Optional[str] = Query(None, description="Filter by base currency code (e.g., BTC, ETH)"),
@@ -3156,7 +3200,7 @@ async def get_crypto_history(
     )
 
 
-@app.get("/crypto/top100/", response_model=CryptoTop100Response)
+@_retired("/crypto/top100/", methods=["GET"], response_model=CryptoTop100Response)
 async def get_crypto_top100(
     base_currency: Optional[str] = Query(None, description="Filter by base currency code (e.g., BTC, ETH)"),
     quote_currency: Optional[str] = Query(None, description="Filter by quote currency code (e.g., USD, USDT)"),
@@ -3222,7 +3266,7 @@ async def get_crypto_top100(
     return CryptoTop100Response(data=items, count=len(items))
 
 
-@app.get("/crypto/assets/", response_model=CryptoAssetResponse)
+@_retired("/crypto/assets/", methods=["GET"], response_model=CryptoAssetResponse)
 async def get_crypto_assets(
     base_currency: Optional[str] = Query(None, description="Filter by base currency (e.g., BTC, ETH)"),
     quote_currency: Optional[str] = Query(None, description="Filter by quote currency (e.g., USD, EUR)"),
@@ -3301,7 +3345,7 @@ async def get_crypto_assets(
 
 # ── UK Stock (LSE) Endpoints ─────────────────────────────────────────────
 
-@app.get("/uk/", response_model=UkPaginatedResponse)
+@_retired("/uk/", methods=["GET"], response_model=UkPaginatedResponse)
 async def get_uk_ohlcv_data(
     ticker: Optional[str] = Query(None, description="Single UK ticker (e.g., AZN)"),
     tickers: Optional[str] = Query(None, description="Comma-separated UK tickers (e.g., AZN,SHEL,HSBA)"),
@@ -3426,7 +3470,7 @@ async def get_uk_ohlcv_data(
     )
 
 
-@app.get("/uk/latest_close/", response_model=UkLatestResponse)
+@_retired("/uk/latest_close/", methods=["GET"], response_model=UkLatestResponse)
 async def get_uk_latest_close_batch(
     tickers: Optional[str] = Query(None, description="Comma-separated UK tickers (e.g., AZN,SHEL,HSBA). If omitted, returns latest for all UK stocks."),
     sector: Optional[str] = Query(None, description="Filter by sector (e.g., Healthcare, Energy)"),
@@ -3518,7 +3562,7 @@ async def get_uk_latest_close_batch(
     return UkLatestResponse(data=items, count=len(items))
 
 
-@app.get("/uk/latest_close/{ticker}", response_model=UkLatestItem)
+@_retired("/uk/latest_close/{ticker}", methods=["GET"], response_model=UkLatestItem)
 async def get_uk_latest_close_single(
     ticker: str,
     db: AsyncSession = Depends(get_db),
@@ -3570,7 +3614,7 @@ async def get_uk_latest_close_single(
     )
 
 
-@app.get("/uk/latest/", response_model=RealTimeOhlcvResponse)
+@_retired("/uk/latest/", methods=["GET"], response_model=RealTimeOhlcvResponse)
 async def get_uk_realtime_latest_batch(
     tickers: str = Query(..., description="Comma-separated UK tickers (e.g., AZN,SHEL,HSBA). Required."),
     db: AsyncSession = Depends(get_db),
@@ -3603,7 +3647,7 @@ async def get_uk_realtime_latest_batch(
 
 
 
-@app.get("/uk/assets/", response_model=UkAssetResponse)
+@_retired("/uk/assets/", methods=["GET"], response_model=UkAssetResponse)
 async def get_uk_assets(
     sector: Optional[str] = Query(None, description="Filter by sector (e.g., Healthcare, Energy)"),
     industry: Optional[str] = Query(None, description="Filter by industry"),
@@ -3683,7 +3727,7 @@ async def get_uk_assets(
 
 # ── FTSE 100 Endpoints ─────────────────────────────────────────────────────
 
-@app.get("/ftse100/", response_model=Ftse100PaginatedResponse)
+@_retired("/ftse100/", methods=["GET"], response_model=Ftse100PaginatedResponse)
 async def get_ftse100_ohlcv_data(
     ticker: Optional[str] = Query(None, description="Single FTSE 100 ticker (e.g., AZN)"),
     tickers: Optional[str] = Query(None, description="Comma-separated FTSE 100 tickers (e.g., AZN,SHEL,HSBA)"),
@@ -3883,7 +3927,7 @@ async def get_ftse100_ohlcv_data(
     )
 
 
-@app.get("/ftse100/latest/", response_model=Ftse100LatestResponse)
+@_retired("/ftse100/latest/", methods=["GET"], response_model=Ftse100LatestResponse)
 async def get_ftse100_latest_batch(
     tickers: Optional[str] = Query(None, description="Comma-separated FTSE 100 tickers (e.g., AZN,SHEL,HSBA). If omitted, returns latest for all FTSE 100 constituents."),
     sector: Optional[str] = Query(None, description="Filter by sector (e.g., Healthcare, Energy)"),
@@ -3977,7 +4021,7 @@ async def get_ftse100_latest_batch(
 
 
 
-@app.get("/ftse100/constituents/", response_model=Ftse100ConstituentResponse)
+@_retired("/ftse100/constituents/", methods=["GET"], response_model=Ftse100ConstituentResponse)
 async def get_ftse100_constituents(
     sector: Optional[str] = Query(None, description="Filter by sector"),
     industry: Optional[str] = Query(None, description="Filter by industry"),
@@ -4050,7 +4094,7 @@ async def get_ftse100_constituents(
     )
 
 
-@app.get("/etf/assets/", response_model=EtfIndexAssetListResponse)
+@_retired("/etf/assets/", methods=["GET"], response_model=EtfIndexAssetListResponse)
 async def get_etf_assets(
     search: Optional[str] = Query(None, description="Search code or name (case-insensitive partial match)"),
     sort: Optional[str] = Query("code", description="Sort field: code, name"),
@@ -4117,7 +4161,7 @@ async def get_etf_assets(
     )
 
 
-@app.get("/index/assets/", response_model=EtfIndexAssetListResponse)
+@_retired("/index/assets/", methods=["GET"], response_model=EtfIndexAssetListResponse)
 async def get_index_assets(
     search: Optional[str] = Query(None, description="Search code or name (case-insensitive partial match)"),
     sort: Optional[str] = Query("code", description="Sort field: code, name"),
@@ -4184,7 +4228,7 @@ async def get_index_assets(
     )
 
 
-@app.get("/gov-bond/assets/", response_model=GovBondAssetResponse)
+@_retired("/gov-bond/assets/", methods=["GET"], response_model=GovBondAssetResponse)
 async def get_gov_bond_assets(
     country: Optional[str] = Query(None, description="Filter by country (e.g., US, DE, JP)"),
     type: Optional[str] = Query(None, description="Filter by type"),
@@ -4261,7 +4305,7 @@ async def get_gov_bond_assets(
 
 # --- UST Bill Rates ---
 
-@app.get("/ust/bill/", response_model=UstBillPaginatedResponse)
+@_retired("/ust/bill/", response_model=UstBillPaginatedResponse, methods=["GET"])
 async def get_ust_bill_rates(
     tenor: Optional[str] = Query(None, description="Single tenor (e.g., 4WK, 13WK, 26WK, 52WK)"),
     tenors: Optional[str] = Query(None, description="Comma-separated tenors (e.g., 4WK,13WK,26WK)"),
@@ -4344,7 +4388,7 @@ async def get_ust_bill_rates(
     )
 
 
-@app.get("/ust/bill/latest/", response_model=UstBillLatestResponse)
+@_retired("/ust/bill/latest/", response_model=UstBillLatestResponse, methods=["GET"])
 async def get_ust_bill_latest(
     tenors: Optional[str] = Query(None, description="Comma-separated tenors (e.g., 4WK,13WK,26WK). If omitted, returns latest for all tenors."),
     db: AsyncSession = Depends(get_db),
@@ -4394,7 +4438,7 @@ async def get_ust_bill_latest(
 
 # --- UST Long-Term Rates ---
 
-@app.get("/ust/long-term/", response_model=UstLongTermPaginatedResponse)
+@_retired("/ust/long-term/", response_model=UstLongTermPaginatedResponse, methods=["GET"])
 async def get_ust_long_term_rates(
     rate_type: Optional[str] = Query(None, description="Single rate type (e.g., BC_20year, Over_10_Years, Real_Rate)"),
     rate_types: Optional[str] = Query(None, description="Comma-separated rate types (e.g., BC_20year,Over_10_Years)"),
@@ -4469,7 +4513,7 @@ async def get_ust_long_term_rates(
     )
 
 
-@app.get("/ust/long-term/latest/", response_model=UstLongTermLatestResponse)
+@_retired("/ust/long-term/latest/", response_model=UstLongTermLatestResponse, methods=["GET"])
 async def get_ust_long_term_latest(
     rate_types: Optional[str] = Query(None, description="Comma-separated rate types (e.g., BC_20year,Over_10_Years). If omitted, returns latest for all rate types."),
     db: AsyncSession = Depends(get_db),
@@ -4515,7 +4559,7 @@ async def get_ust_long_term_latest(
 
 # --- UST Real Yield Rates ---
 
-@app.get("/ust/real-yield/", response_model=UstRealYieldPaginatedResponse)
+@_retired("/ust/real-yield/", response_model=UstRealYieldPaginatedResponse, methods=["GET"])
 async def get_ust_real_yield_rates(
     tenor: Optional[str] = Query(None, description="Single tenor (e.g., 5Y, 10Y, 30Y)"),
     tenors: Optional[str] = Query(None, description="Comma-separated tenors (e.g., 5Y,10Y,30Y)"),
@@ -4590,7 +4634,7 @@ async def get_ust_real_yield_rates(
     )
 
 
-@app.get("/ust/real-yield/latest/", response_model=UstRealYieldLatestResponse)
+@_retired("/ust/real-yield/latest/", response_model=UstRealYieldLatestResponse, methods=["GET"])
 async def get_ust_real_yield_latest(
     tenors: Optional[str] = Query(None, description="Comma-separated tenors (e.g., 5Y,10Y,30Y). If omitted, returns latest for all tenors."),
     db: AsyncSession = Depends(get_db),
@@ -4635,7 +4679,7 @@ async def get_ust_real_yield_latest(
 
 # --- UST Yield Rates ---
 
-@app.get("/ust/yield/", response_model=UstYieldPaginatedResponse)
+@_retired("/ust/yield/", response_model=UstYieldPaginatedResponse, methods=["GET"])
 async def get_ust_yield_rates(
     tenor: Optional[str] = Query(None, description="Single tenor (e.g., 1M, 3M, 6M, 1Y, 2Y, 5Y, 10Y, 30Y)"),
     tenors: Optional[str] = Query(None, description="Comma-separated tenors (e.g., 2Y,5Y,10Y,30Y)"),
@@ -4710,7 +4754,7 @@ async def get_ust_yield_rates(
     )
 
 
-@app.get("/ust/yield/latest/", response_model=UstYieldLatestResponse)
+@_retired("/ust/yield/latest/", response_model=UstYieldLatestResponse, methods=["GET"])
 async def get_ust_yield_latest(
     tenors: Optional[str] = Query(None, description="Comma-separated tenors (e.g., 2Y,5Y,10Y,30Y). If omitted, returns latest for all tenors."),
     db: AsyncSession = Depends(get_db),
@@ -4752,6 +4796,225 @@ async def get_ust_yield_latest(
     return UstYieldLatestResponse(data=items, count=len(items))
 
 
+_UAT_UST_SERIES = ("bill", "long_term", "real_yield", "yield")
+
+_UAT_UST_TENORS = {
+    "bill": ("4WK", "6WK", "8WK", "13WK", "17WK", "26WK", "52WK"),
+    "yield": (
+        "1M", "1.5M", "2M", "3M", "4M", "6M",
+        "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "20Y", "30Y",
+    ),
+    "real_yield": ("5Y", "7Y", "10Y", "20Y", "30Y"),
+}
+
+_UAT_UST_RATE_TYPES = ("BC_20year", "Over_10_Years", "Real_Rate")
+
+_UAT_UST_TENOR_SERIES = tuple(_UAT_UST_TENORS)
+_UAT_UST_RATE_TYPE_SERIES = ("long_term",)
+
+_UAT_UST_COLUMNS = {
+    "bill": "NULL::numeric AS rate, discount, coupon, avg_discount, avg_coupon, maturity_date, cusip, NULL::numeric AS extrapolation_factor",
+    "long_term": "rate, NULL::numeric AS discount, NULL::numeric AS coupon, NULL::numeric AS avg_discount, NULL::numeric AS avg_coupon, NULL::date AS maturity_date, NULL::varchar AS cusip, extrapolation_factor",
+    "real_yield": "rate, NULL::numeric AS discount, NULL::numeric AS coupon, NULL::numeric AS avg_discount, NULL::numeric AS avg_coupon, NULL::date AS maturity_date, NULL::varchar AS cusip, NULL::numeric AS extrapolation_factor",
+    "yield": "rate, NULL::numeric AS discount, NULL::numeric AS coupon, NULL::numeric AS avg_discount, NULL::numeric AS avg_coupon, NULL::date AS maturity_date, NULL::varchar AS cusip, NULL::numeric AS extrapolation_factor",
+}
+
+_UAT_UST_TABLES = {
+    "bill": ("ust_bill_rates", "tenor", None),
+    "long_term": ("ust_long_term_rates", None, "rate_type"),
+    "real_yield": ("ust_real_yield_rates", "tenor", None),
+    "yield": ("ust_yield_rates", "tenor", None),
+}
+
+
+@app.get("/ust/", response_model=UstPaginatedResponse)
+async def get_ust_rates(
+    series: Optional[str] = Query(None, description="Comma-separated series: bill, long_term, real_yield, yield (default all)"),
+    tenor: Optional[str] = Query(None, description="Single tenor (e.g., 4WK, 13WK, 2Y, 10Y)"),
+    tenors: Optional[str] = Query(None, description="Comma-separated tenors (e.g., 13WK,2Y,10Y)"),
+    rate_type: Optional[str] = Query(None, description="Single long-term rate type (e.g., BC_20year)"),
+    rate_types: Optional[str] = Query(None, description="Comma-separated rate types (e.g., BC_20year,Over_10_Years)"),
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    latest: bool = Query(False, description="Return one row per series and tenor/rate type"),
+    sort_by: Optional[str] = Query("date", pattern="^(date|rate|discount|coupon)$"),
+    sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(1000, ge=1, le=5000),
+    db: AsyncSession = Depends(get_db),
+    api_key: str = Depends(verify_api_key),
+):
+    """
+    US Treasury rates across all series in one response.
+
+    Consolidates the former per-series endpoints: filter by `series`,
+    tenor or rate type, date range, and page through one envelope.
+    `latest=true` returns the most recent row per series and tenor/rate type.
+    """
+    requested = [x.lower() for x in parse_comma_separated(series)] if series else list(_UAT_UST_SERIES)
+    selected = [name for name in _UAT_UST_SERIES if name in requested]
+    if not selected:
+        raise HTTPException(
+            status_code=400,
+            detail="series must be one of: bill, long_term, real_yield, yield",
+        )
+
+    tenor_list = parse_comma_separated(tenors) or ([tenor.upper()] if tenor else None)
+    rate_type_list = (
+        parse_comma_separated_preserve(rate_types) or ([rate_type] if rate_type else None)
+    )
+
+    if tenor_list:
+        tenor_series = [name for name in selected if name in _UAT_UST_TENOR_SERIES]
+        if not tenor_series:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "tenor only applies to series: "
+                    f"{', '.join(_UAT_UST_TENOR_SERIES)}"
+                ),
+            )
+        accepted = []
+        for name in tenor_series:
+            for value in _UAT_UST_TENORS[name]:
+                if value not in accepted:
+                    accepted.append(value)
+        invalid = [t for t in tenor_list if t not in accepted]
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Invalid tenor(s): {', '.join(invalid)}. "
+                    f"Accepted for {', '.join(tenor_series)}: {', '.join(accepted)}"
+                ),
+            )
+
+    if rate_type_list:
+        if not any(name in _UAT_UST_RATE_TYPE_SERIES for name in selected):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "rate_type only applies to series: "
+                    f"{', '.join(_UAT_UST_RATE_TYPE_SERIES)}"
+                ),
+            )
+        invalid = [r for r in rate_type_list if r not in _UAT_UST_RATE_TYPES]
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Invalid rate_type(s): {', '.join(invalid)}. "
+                    f"Accepted: {', '.join(_UAT_UST_RATE_TYPES)}"
+                ),
+            )
+
+    params = {}
+
+    def _branch(name):
+        table, tenor_col, rate_type_col = _UAT_UST_TABLES[name]
+        filters = []
+        if start_date:
+            filters.append("date >= :start_date")
+            params["start_date"] = start_date
+        if end_date:
+            filters.append("date <= :end_date")
+            params["end_date"] = end_date
+        if tenor_col and tenor_list:
+            keys = []
+            for i, value in enumerate(tenor_list):
+                key = f"tenor_{name}_{i}"
+                params[key] = value
+                keys.append(f":{key}")
+            filters.append(f"{tenor_col} IN ({', '.join(keys)})")
+        if rate_type_col and rate_type_list:
+            keys = []
+            for i, value in enumerate(rate_type_list):
+                key = f"rtype_{name}_{i}"
+                params[key] = value
+                keys.append(f":{key}")
+            filters.append(f"{rate_type_col} IN ({', '.join(keys)})")
+        where = " WHERE " + " AND ".join(filters) if filters else ""
+        cols = _UAT_UST_COLUMNS[name]
+        tenor_expr = tenor_col or "NULL::varchar"
+        rate_type_expr = rate_type_col or "NULL::varchar"
+        return (
+            f"SELECT '{name}' AS series, date, {tenor_expr} AS tenor, "
+            f"{rate_type_expr} AS rate_type, {cols} FROM {table}{where}"
+        )
+
+    union_sql = " UNION ALL ".join(_branch(name) for name in selected)
+
+    if latest:
+        count_sql = (
+            "SELECT count(*) FROM ("
+            "SELECT DISTINCT ON (series, coalesce(tenor, rate_type)) series "
+            f"FROM ({union_sql}) AS u "
+            "ORDER BY series, coalesce(tenor, rate_type), date DESC"
+            ") AS l"
+        )
+        data_sql = (
+            "SELECT * FROM ("
+            "SELECT DISTINCT ON (series, coalesce(tenor, rate_type)) * "
+            f"FROM ({union_sql}) AS u "
+            "ORDER BY series, coalesce(tenor, rate_type), date DESC"
+            ") AS l ORDER BY date DESC LIMIT :limit OFFSET :offset"
+        )
+    else:
+        sort_column = sort_by if sort_by in ("date", "rate", "discount", "coupon") else "date"
+        direction = "DESC" if sort_order == "desc" else "ASC"
+        count_sql = f"SELECT count(*) FROM ({union_sql}) AS u"
+        data_sql = (
+            f"SELECT * FROM ({union_sql}) AS u "
+            f"ORDER BY {sort_column} {direction} NULLS LAST, date DESC "
+            "LIMIT :limit OFFSET :offset"
+        )
+
+    cache_key = (
+        f"ust|series={selected}|tenors={tenor_list}|rtypes={rate_type_list}"
+        f"|start={start_date}|end={end_date}|latest={latest}"
+    )
+    total = _get_cached_count(cache_key)
+    if total is None:
+        total_result = await db.execute(text(count_sql), params)
+        total = total_result.scalar() or 0
+        _set_cached_count(cache_key, total)
+
+    params["limit"] = per_page
+    params["offset"] = (page - 1) * per_page
+    result = await db.execute(text(data_sql), params)
+    rows = result.fetchall()
+
+    data = [
+        UstRateItem(
+            series=row.series,
+            date=row.date,
+            tenor=row.tenor,
+            rate_type=row.rate_type,
+            rate=row.rate,
+            discount=row.discount,
+            coupon=row.coupon,
+            avg_discount=row.avg_discount,
+            avg_coupon=row.avg_coupon,
+            maturity_date=row.maturity_date,
+            cusip=row.cusip,
+            extrapolation_factor=row.extrapolation_factor,
+        )
+        for row in rows
+    ]
+
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+
+    return UstPaginatedResponse(
+        data=data,
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
+        has_next=page < total_pages,
+        has_prev=page > 1,
+    )
+
+
 
 # --- Commodities ---
 
@@ -4772,6 +5035,7 @@ async def get_commodity_ohlcv_data(
     volume_max: Optional[int] = Query(None),
     sort_by: Optional[str] = Query("date", pattern="^(date|volume|close|open|high|low)$"),
     sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$"),
+    latest: bool = Query(False, description="Return only the most recent bar per symbol"),
     page: int = Query(1, ge=1),
     per_page: int = Query(1000, ge=1, le=5000),
     db: AsyncSession = Depends(get_db),
@@ -4780,62 +5044,59 @@ async def get_commodity_ohlcv_data(
     """
     List paginated OHLCV data for commodities.
     Supports filtering by symbol(s), category, date range, and price/volume bounds.
+    Set `latest=true` to return only the most recent bar per symbol.
     """
     symbol_list = parse_comma_separated_preserve(symbols) or ([symbol] if symbol else None)
 
-    query = select(CommodityEOD)
-    count_query = select(func.count()).select_from(CommodityEOD)
-
+    conditions = []
     if symbol_list:
         if len(symbol_list) == 1:
-            query = query.where(CommodityEOD.symbol == symbol_list[0])
-            count_query = count_query.where(CommodityEOD.symbol == symbol_list[0])
+            conditions.append(CommodityEOD.symbol == symbol_list[0])
         else:
-            query = query.where(CommodityEOD.symbol.in_(symbol_list))
-            count_query = count_query.where(CommodityEOD.symbol.in_(symbol_list))
-
+            conditions.append(CommodityEOD.symbol.in_(symbol_list))
     if category:
-        query = query.where(CommodityEOD.category == category)
-        count_query = count_query.where(CommodityEOD.category == category)
-
+        conditions.append(CommodityEOD.category == category)
     if start_date:
-        query = query.where(CommodityEOD.date >= start_date)
-        count_query = count_query.where(CommodityEOD.date >= start_date)
+        conditions.append(CommodityEOD.date >= start_date)
     if end_date:
-        query = query.where(CommodityEOD.date <= end_date)
-        count_query = count_query.where(CommodityEOD.date <= end_date)
+        conditions.append(CommodityEOD.date <= end_date)
     if year:
-        query = query.where(func.extract("year", CommodityEOD.date) == year)
-        count_query = count_query.where(func.extract("year", CommodityEOD.date) == year)
+        conditions.append(func.extract("year", CommodityEOD.date) == year)
     if month:
-        query = query.where(func.extract("month", CommodityEOD.date) == month)
-        count_query = count_query.where(func.extract("month", CommodityEOD.date) == month)
+        conditions.append(func.extract("month", CommodityEOD.date) == month)
     if open_min is not None:
-        query = query.where(CommodityEOD.open >= open_min)
-        count_query = count_query.where(CommodityEOD.open >= open_min)
+        conditions.append(CommodityEOD.open >= open_min)
     if open_max is not None:
-        query = query.where(CommodityEOD.open <= open_max)
-        count_query = count_query.where(CommodityEOD.open <= open_max)
+        conditions.append(CommodityEOD.open <= open_max)
     if close_min is not None:
-        query = query.where(CommodityEOD.close >= close_min)
-        count_query = count_query.where(CommodityEOD.close >= close_min)
+        conditions.append(CommodityEOD.close >= close_min)
     if close_max is not None:
-        query = query.where(CommodityEOD.close <= close_max)
-        count_query = count_query.where(CommodityEOD.close <= close_max)
+        conditions.append(CommodityEOD.close <= close_max)
     if volume_min is not None:
-        query = query.where(CommodityEOD.volume >= volume_min)
-        count_query = count_query.where(CommodityEOD.volume >= volume_min)
+        conditions.append(CommodityEOD.volume >= volume_min)
     if volume_max is not None:
-        query = query.where(CommodityEOD.volume <= volume_max)
-        count_query = count_query.where(CommodityEOD.volume <= volume_max)
+        conditions.append(CommodityEOD.volume <= volume_max)
 
-    sort_column = getattr(CommodityEOD, sort_by or "date")
-    query = query.order_by(sort_column.desc() if sort_order == "desc" else sort_column.asc())
+    query = select(CommodityEOD).where(*conditions)
+    count_query = select(func.count()).select_from(CommodityEOD).where(*conditions)
+
+    if latest:
+        query = query.distinct(CommodityEOD.symbol).order_by(
+            CommodityEOD.symbol.asc(), CommodityEOD.date.desc()
+        )
+        count_query = (
+            select(func.count(func.distinct(CommodityEOD.symbol)))
+            .select_from(CommodityEOD)
+            .where(*conditions)
+        )
+    else:
+        sort_column = getattr(CommodityEOD, sort_by or "date")
+        query = query.order_by(sort_column.desc() if sort_order == "desc" else sort_column.asc())
 
     offset = (page - 1) * per_page
     query = query.offset(offset).limit(per_page)
 
-    cache_key = f"commodities|symbols={symbol_list}|category={category}|start={start_date}|end={end_date}|year={year}|month={month}|omin={open_min}|omax={open_max}|cmin={close_min}|cmax={close_max}|vmin={volume_min}|vmax={volume_max}"
+    cache_key = f"commodities|latest={latest}|symbols={symbol_list}|category={category}|start={start_date}|end={end_date}|year={year}|month={month}|omin={open_min}|omax={open_max}|cmin={close_min}|cmax={close_max}|vmin={volume_min}|vmax={volume_max}"
     total = _get_cached_count(cache_key)
     if total is None:
         total_result = await db.execute(count_query)
@@ -4858,62 +5119,49 @@ async def get_commodity_ohlcv_data(
     )
 
 
-@app.get("/commodity/latest/", response_model=CommodityLatestResponse)
-async def get_commodity_latest_batch(
-    symbols: Optional[str] = Query(None, description="Comma-separated commodity symbols (e.g., LGOc3,NICKEL,GDK). If omitted, returns latest for all commodities."),
-    category: Optional[str] = Query(None, description="Filter by category (e.g., Energy, Metals)"),
+@app.get("/commodity/latest/", response_model=RealTimeOhlcvResponse)
+async def get_commodity_latest_realtime(
+    symbols: str = Query(..., description="Comma-separated commodity symbols (e.g., LGOc3,NICKEL,GDK). Required."),
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key),
 ):
     """
-    Returns the latest OHLCV record for commodities.
-    Uses DISTINCT ON for efficient per-symbol latest-row lookups.
-    Optionally filter by specific symbols and/or category.
+    Returns real-time OHLCV data from EODHD for the specified commodity symbols.
+    Symbols resolve as SYMBOL.COMM. Unknown symbols are reported in `missing`
+    and do not fail the request; a known symbol without a live quote comes back
+    with null price fields.
     """
     symbol_list = parse_comma_separated_preserve(symbols)
+    if not symbol_list:
+        raise HTTPException(status_code=400, detail="symbols parameter is required")
 
-    category_clause = f"AND category = '{category}'" if category else ""
+    known_result = await db.execute(
+        select(CommodityEOD.symbol).distinct().where(CommodityEOD.symbol.in_(symbol_list))
+    )
+    known = {row[0] for row in known_result.fetchall()}
+    resolvable = [sym for sym in symbol_list if sym in known]
+    missing = [sym for sym in symbol_list if sym not in known]
 
-    if symbol_list:
-        symbol_values = ", ".join(f"'{s}'" for s in symbol_list)
-        query = text(f"""
-            SELECT DISTINCT ON (symbol) symbol, name, category,
-                   date, open, high, low, close, adjusted_close, volume
-            FROM commodities_eod
-            WHERE symbol IN ({symbol_values}) {category_clause}
-            ORDER BY symbol, date DESC
-        """)
-    else:
-        query = text(f"""
-            SELECT DISTINCT ON (symbol) symbol, name, category,
-                   date, open, high, low, close, adjusted_close, volume
-            FROM commodities_eod
-            WHERE 1=1 {category_clause}
-            ORDER BY symbol, date DESC
-        """)
+    if not resolvable:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No commodity found with symbols: {', '.join(missing)}",
+        )
 
-    result = await db.execute(query)
-    rows = result.fetchall()
+    quotes = await fetch_eodhd_realtime_multi(
+        [f"{sym}.{COMMODITY_EXCHANGE}" for sym in resolvable]
+    )
 
     items = [
-        CommodityLatestItem(
-            symbol=row.symbol,
-            name=row.name,
-            category=row.category,
-            date=row.date,
-            open=row.open,
-            high=row.high,
-            low=row.low,
-            close=row.close,
-            adjusted_close=row.adjusted_close,
-            volume=row.volume,
+        parse_eodhd_response(
+            quotes.get(f"{sym}.{COMMODITY_EXCHANGE}".upper(), {}),
+            sym,
+            COMMODITY_EXCHANGE,
         )
-        for row in rows
+        for sym in resolvable
     ]
 
-    return CommodityLatestResponse(data=items, count=len(items))
-
-
+    return RealTimeOhlcvResponse(data=items, count=len(items), missing=missing)
 
 
 @app.get("/commodity/symbols/", response_model=CommoditySymbolResponse)
@@ -4949,7 +5197,7 @@ async def get_commodity_symbols(
     return CommoditySymbolResponse(data=items, count=len(items))
 
 
-@app.get("/commodity/categories/", response_model=CommodityCategoryResponse)
+@_retired("/commodity/categories/", response_model=CommodityCategoryResponse, methods=["GET"])
 async def get_commodity_categories(
     db: AsyncSession = Depends(get_db),
     api_key: str = Depends(verify_api_key),

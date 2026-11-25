@@ -17,7 +17,6 @@ class OhlcvDataBase(BaseModel):
     close: Optional[Decimal] = None
     adjusted_close: Optional[Decimal] = None
     volume: Optional[int] = None
-    asset_isin: Optional[str] = None
     instrument_id: Optional[UUID] = None
 
 
@@ -508,6 +507,33 @@ class UstYieldLatestResponse(BaseModel):
     """Latest US Treasury yield rates for all tenors."""
     data: List[UstYieldLatestItem]
     count: int
+
+
+class UstRateItem(BaseModel):
+    """Single US Treasury rate record across any series."""
+    series: str
+    date: date_type
+    tenor: Optional[str] = None
+    rate_type: Optional[str] = None
+    rate: Optional[Decimal] = None
+    discount: Optional[Decimal] = None
+    coupon: Optional[Decimal] = None
+    avg_discount: Optional[Decimal] = None
+    avg_coupon: Optional[Decimal] = None
+    maturity_date: Optional[date_type] = None
+    cusip: Optional[str] = None
+    extrapolation_factor: Optional[Decimal] = None
+
+
+class UstPaginatedResponse(BaseModel):
+    """Paginated US Treasury rates across any series."""
+    data: List[UstRateItem]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
 
 
 # ── Foreign Exchange (FX) Schemas ─────────────────────────────────────────────
@@ -1008,6 +1034,7 @@ class RealTimeOhlcvResponse(BaseModel):
     """Batch real-time OHLCV response from EODHD."""
     data: List[RealTimeOhlcvItem]
     count: int
+    missing: List[str] = []
 
 
 class AssetLookupItem(BaseModel):
