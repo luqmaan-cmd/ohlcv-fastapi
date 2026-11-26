@@ -68,7 +68,7 @@ Execute read-only SQL SELECT queries directly against the database. Four guardra
 1. **Read-only** — Only `SELECT` / `WITH` (CTE) statements permitted
 2. **Timeout** — Queries cancelled after 30s (configurable via `SQL_TIMEOUT_S`)
 3. **Row limit** — Max 5,000 rows returned (configurable via `SQL_MAX_ROWS`)
-4. **Allowed tables** — `ohlcv_unified`, `assets`, `tickers`, `ticker_aliases`, `commodities_eod`, the per-class tables (`ohlcv_data`, `ohlcv_data_etf_index`, `ohlcv_data_gov_bonds`, `ohlcv_data_fx`, `ohlcv_data_uk`, `ohlcv_data_crypto` and their metadata tables), `sp500_constituents`, `ftse100_constituents`, and the four `ust_*` rate tables
+4. **Allowed tables** — `ohlcv_unified`, `assets`, `tickers`, `ticker_aliases`, `commodities_eod`, and the four `ust_*` rate tables
 
 ```bash
 curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=YOUR_KEY" \
@@ -92,8 +92,8 @@ curl -X POST "https://ohlcv-api-832081557693.europe-west2.run.app/sql/?api_key=Y
 
 ## All Endpoints
 
-Eight paths, nine operations. Anything not listed here is retired — set
-`ENABLE_RETIRED_ROUTES=1` to re-register the legacy routes for comparison only.
+Eight paths, nine operations. Anything not listed here has been removed from
+the codebase.
 
 ### OHLCV
 
@@ -171,13 +171,8 @@ own secret and can be rotated without touching production keys. `API_KEY` is sti
 shared with production, so a production key also authenticates on UAT.
 
 `/ust/` serves US Treasury rates on both services. The eight per-series routes
-(`/ust/bill/`, `/ust/yield/`, …) are retired; set `ENABLE_RETIRED_ROUTES=1` to
-re-register them alongside `/ust/`.
-
-`ENABLE_RETIRED_ROUTES=1` re-registers the retired legacy routes (`/uk/`, `/etf/`,
-`/index/`, `/fx/`, `/crypto/`, `/gov-bond/`, `/sp500/`, `/ftse100/`, `/aliases/`,
-`/assets/{ticker}`, `/tickers/`, `/ohlcv/latest_close/*`, `/ohlcv/stats/*`). It is
-off by default and exists only to compare old and new surfaces side by side.
+(`/ust/bill/`, `/ust/yield/`, …) are gone; any other path that is not in
+[All Endpoints](#all-endpoints) also no longer exists.
 
 ### Secrets (GCP Secret Manager)
 

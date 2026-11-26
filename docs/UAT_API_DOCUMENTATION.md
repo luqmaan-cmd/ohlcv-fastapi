@@ -367,7 +367,7 @@ Guardrails:
 | Rule | Detail |
 |---|---|
 | Read-only | Only `SELECT` or `WITH` (CTE) statements |
-| Tables | Must be in the whitelist — `ohlcv_unified`, `assets`, `tickers`, `commodities_eod`, the per-class tables, and the UST rate tables |
+| Tables | Must be in the whitelist — `ohlcv_unified`, `assets`, `tickers`, `ticker_aliases`, `commodities_eod`, and the four `ust_*` rate tables |
 | Timeout | 30 seconds (`SQL_TIMEOUT_S`); exceeding it returns `504` |
 | Row cap | 5,000 rows (`SQL_MAX_ROWS`); extra rows are dropped and `truncated` is `true` |
 
